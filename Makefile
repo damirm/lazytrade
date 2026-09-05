@@ -3,12 +3,13 @@ SHELL := /bin/sh
 .DEFAULT_GOAL := help
 
 GO ?= go
+SQLC ?= sqlc
 BIN_DIR ?= bin
 BINARY ?= $(BIN_DIR)/lazytrade
 CONFIG ?= configs/example.yaml
 PKG ?= ./...
 
-.PHONY: help build fmt vet test test-race check config-validate version
+.PHONY: help build fmt vet test test-race check sqlc-generate sqlc-check config-validate version
 
 help: ## Show available targets.
 	@printf '%s\n' \
@@ -18,6 +19,8 @@ help: ## Show available targets.
 		'make test             Run tests (override PKG=./internal/agent).' \
 		'make test-race        Run all tests with the race detector.' \
 		'make check            Run vet and tests.' \
+		'make sqlc-generate    Regenerate SQLite query code from migrations.' \
+		'make sqlc-check       Verify generated SQLite query code is current.' \
 		'make config-validate  Build and validate CONFIG (default: configs/example.yaml).' \
 		'make version          Build and print the application version.'
 
@@ -38,6 +41,12 @@ test-race: ## Run the full test suite with the race detector.
 	$(GO) test -race ./...
 
 check: vet test ## Run the non-mutating local verification suite.
+
+sqlc-generate: ## Regenerate SQLite query code from forward migrations.
+	$(SQLC) generate -f sqlc.sqlite.yaml
+
+sqlc-check: sqlc-generate ## Fail when generated SQLite query code is stale.
+	git diff --exit-code -- internal/storage/sqlite/generated
 
 config-validate: build ## Strictly validate a configuration file.
 	$(BINARY) config validate --config $(CONFIG)

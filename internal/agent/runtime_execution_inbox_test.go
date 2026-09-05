@@ -33,14 +33,17 @@ func TestStartupDrainsStagedExecutionAfterRecoveringLocalOrder(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
+	subscription := exchange.Subscription{
+		InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+	}
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk: &recordingRisk{decision: RiskDecision{Allowed: true}}, Intents: store,
-			Subscription: exchange.Subscription{
-				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
-			Ready: ready,
+			Exchange: adapter,
+			Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, subscription, nil,
+			),
+			Intents: store,
+			Ready:   ready,
 		}).Run(runCtx)
 	}()
 	select {
@@ -83,11 +86,19 @@ func TestExecutionInboxDuplicateReplayDoesNotReapplyProjections(t *testing.T) {
 	}
 
 	receivedAt := fill.ExecutedAt.Add(time.Second)
-	if err := runtime.recordExecution(ctx, "fake", fill, receivedAt, "2026-01-01"); err != nil {
-		t.Fatalf("first execution ingestion: %v", err)
+	entry, inserted, err := runtime.Intents.StageExecution(ctx, "fake", fill, receivedAt, "2026-01-01")
+	if err != nil || !inserted {
+		t.Fatalf("stage first execution: inserted = %t, error = %v", inserted, err)
 	}
-	if err := runtime.recordExecution(ctx, "fake", fill, receivedAt, "2026-01-01"); err != nil {
-		t.Fatalf("duplicate execution ingestion: %v", err)
+	if applied, err := runtime.Intents.ApplyStagedExecution(ctx, entry.ID); err != nil || !applied {
+		t.Fatalf("apply first execution: applied = %t, error = %v", applied, err)
+	}
+	duplicate, inserted, err := runtime.Intents.StageExecution(ctx, "fake", fill, receivedAt, "2026-01-01")
+	if err != nil || inserted || duplicate.ID != entry.ID {
+		t.Fatalf("stage duplicate execution: entry = %#v, inserted = %t, error = %v", duplicate, inserted, err)
+	}
+	if applied, err := runtime.Intents.ApplyStagedExecution(ctx, duplicate.ID); err != nil || applied {
+		t.Fatalf("apply duplicate execution: applied = %t, error = %v", applied, err)
 	}
 	assertIntentStatus(t, store, intent.ClientOrderID, "submitted")
 	position, err := store.LoadPosition(ctx, "ma", "TEST")
@@ -153,14 +164,17 @@ func TestLiveExecutionStreamIngestsThroughStageThenApply(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
+	subscription := exchange.Subscription{
+		InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+	}
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk: &recordingRisk{decision: RiskDecision{Allowed: true}}, Intents: tracked,
-			Subscription: exchange.Subscription{
-				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
-			Ready: ready,
+			Exchange: adapter,
+			Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, subscription, nil,
+			),
+			Intents: tracked,
+			Ready:   ready,
 		}).Run(runCtx)
 	}()
 	<-ready

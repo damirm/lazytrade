@@ -138,8 +138,14 @@ func seedFailedStrategyIntents(t *testing.T, failedStatus string) (
 	failed := build("ma-a", failedStatus)
 	peer := build("ma-b", "ready")
 	for _, intent := range []storage.OrderIntent{failed, peer} {
-		if _, err := store.CreateOrderIntent(ctx, intent); err != nil {
-			t.Fatalf("create %s: %v", intent.ID, err)
+		if err := store.RecordAllowedDecisionIntent(ctx, storage.RiskDecision{
+			ID: "decision-" + intent.ID, SignalID: intent.SignalID, Decision: "allow",
+			ReasonCode: "test_allowed", Payload: []byte(`{}`), CreatedAt: now,
+		}, intent, storage.AuditEvent{
+			ID: "audit-" + intent.ID, EventType: "risk_allowed", Actor: "test",
+			ScopeType: "order_intent", ScopeID: intent.ID, Payload: []byte(`{}`), CreatedAt: now,
+		}); err != nil {
+			t.Fatalf("record allowed intent %s: %v", intent.ID, err)
 		}
 	}
 	return store, failed, peer

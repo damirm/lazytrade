@@ -24,7 +24,8 @@
 7. [Роли агентов](agents/roles/README.md) — зоны ответственности и handoff.
 
 Долгосрочные планы хранятся в `roadmap/`, в том числе отдельный план
-[multi-exchange runtime](roadmap/multi-exchange.md). Принятые архитектурные
+[multi-exchange runtime](roadmap/multi-exchange.md) и текущий
+[план рефакторинга](roadmap/refactoring.md). Принятые архитектурные
 решения хранятся как ADR в [`architecture/adr/`](architecture/adr/README.md),
 а целевые требования — в [`specs/`](specs/README.md).
 

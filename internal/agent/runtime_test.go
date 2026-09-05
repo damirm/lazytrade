@@ -86,10 +86,9 @@ func TestRuntimePersistsStateAndIntentBeforePlacingOrder(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker, Risk: riskGate, Intents: store,
-			Subscription: exchange.Subscription{
+			Exchange: adapter, Strategies: singleTestStrategy(worker, riskGate, exchange.Subscription{
 				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
+			}, nil), Intents: store,
 			Ready: ready, OnOrder: func(order domain.Order) { orders <- order },
 		}).Run(runCtx)
 	}()
@@ -222,11 +221,10 @@ func TestRuntimeRecoversSignalCommittedBeforeRiskDecision(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk: &recordingRisk{decision: RiskDecision{Allowed: true}}, Intents: store,
-			Subscription: exchange.Subscription{
-				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
+			Exchange: adapter, Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, exchange.Subscription{
+					InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+				}, nil), Intents: store,
 			Ready: ready, OnOrder: func(order domain.Order) { orders <- order },
 		}).Run(runCtx)
 	}()
@@ -261,13 +259,11 @@ func TestRuntimePersistsRejectedRecoveryWithoutIntent(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk: &recordingRisk{decision: RiskDecision{
+			Exchange: adapter, Strategies: singleTestStrategy(worker, &recordingRisk{decision: RiskDecision{
 				Allowed: false, ReasonCode: "test_limit", Reason: "rejected by test",
-			}},
-			Intents: store, Subscription: exchange.Subscription{
+			}}, exchange.Subscription{
 				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
+			}, nil), Intents: store,
 			Ready: ready,
 		}).Run(runCtx)
 	}()
@@ -297,9 +293,9 @@ func TestRuntimeRecoversUnknownOutcomeByClientOrderIDWithoutResubmit(t *testing.
 		InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
 	}
 	firstErr := (Runtime{
-		Exchange: adapter, Worker: worker,
-		Risk:    &recordingRisk{decision: RiskDecision{Allowed: true}},
-		Intents: store, Subscription: subscription,
+		Exchange: adapter, Strategies: singleTestStrategy(
+			worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, subscription, nil,
+		), Intents: store,
 	}).Run(context.Background())
 	if firstErr == nil || !strings.Contains(firstErr.Error(), "unknown outcome") {
 		t.Fatalf("first Run() error = %v", firstErr)
@@ -319,9 +315,9 @@ func TestRuntimeRecoversUnknownOutcomeByClientOrderIDWithoutResubmit(t *testing.
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk:    &recordingRisk{decision: RiskDecision{Allowed: true}},
-			Intents: store, Subscription: subscription, Ready: ready,
+			Exchange: adapter, Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, subscription, nil,
+			), Intents: store, Ready: ready,
 			OnOrder: func(order domain.Order) { orders <- order },
 		}).Run(runCtx)
 	}()
@@ -358,11 +354,10 @@ func TestRuntimePersistsKnownExchangeRejection(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk:    &recordingRisk{decision: RiskDecision{Allowed: true}},
-			Intents: store, Subscription: exchange.Subscription{
-				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
+			Exchange: adapter, Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, exchange.Subscription{
+					InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+				}, nil), Intents: store,
 			Ready: ready,
 		}).Run(runCtx)
 	}()
@@ -386,11 +381,10 @@ func TestRuntimeStopsBeforeMarketSubscriptionOnReconciliationMismatch(t *testing
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk:    &recordingRisk{decision: RiskDecision{Allowed: false, ReasonCode: "test"}},
-			Intents: store, Subscription: exchange.Subscription{
-				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
+			Exchange: adapter, Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: false, ReasonCode: "test"}}, exchange.Subscription{
+					InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+				}, nil), Intents: store,
 			Ready: ready,
 		}).Run(firstCtx)
 	}()
@@ -402,12 +396,10 @@ func TestRuntimeStopsBeforeMarketSubscriptionOnReconciliationMismatch(t *testing
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	err := (Runtime{
-		Exchange: adapter, Worker: worker,
-		Risk:    &recordingRisk{decision: RiskDecision{Allowed: true}},
-		Intents: store, Reconciler: failingReconciler{},
-		Subscription: exchange.Subscription{
-			InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-		},
+		Exchange: adapter, Strategies: singleTestStrategy(
+			worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, exchange.Subscription{
+				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+			}, nil), Intents: store, Reconciler: failingReconciler{},
 	}).Run(runCtx)
 	cancel()
 	if !errors.Is(err, ErrReconciliationMismatch) {
@@ -433,11 +425,10 @@ func TestRuntimeDeduplicatesExecutionAndUpdatesPosition(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk:    &recordingRisk{decision: RiskDecision{Allowed: true}},
-			Intents: store, Subscription: exchange.Subscription{
-				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
+			Exchange: adapter, Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, exchange.Subscription{
+					InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+				}, nil), Intents: store,
 			Ready: ready, Now: func() time.Time { return executedAt.Add(time.Second) },
 		}).Run(runCtx)
 	}()
@@ -501,14 +492,12 @@ func TestRuntimePersistsRealizedPnLCommissionsAndDailyStatistics(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Worker: worker,
-			Risk:    &recordingRisk{decision: RiskDecision{Allowed: true}},
-			Intents: store, Subscription: exchange.Subscription{
-				InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-			},
+			Exchange: adapter, Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, exchange.Subscription{
+					InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+				}, func(at time.Time) string { return dayPolicy.At(at).Key }), Intents: store,
 			Ready: ready, OnOrder: func(order domain.Order) { orders <- order },
-			Now:           func() time.Time { return executedAt.Add(2 * time.Minute) },
-			TradingDayKey: func(at time.Time) string { return dayPolicy.At(at).Key },
+			Now: func() time.Time { return executedAt.Add(2 * time.Minute) },
 		}).Run(runCtx)
 	}()
 	<-ready

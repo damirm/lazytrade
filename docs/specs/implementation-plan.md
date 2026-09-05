@@ -347,7 +347,6 @@ db/
     sqlite/
         migrations/
         queries/
-        schema.sql
     postgres/
         README.md
 

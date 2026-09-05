@@ -124,11 +124,8 @@ func runAgent(ctx context.Context, configPath string, cfg appconfig.Config) erro
 	}
 	defer adapter.Close()
 
-	workers := make(map[domain.InstrumentID]*strategy.Worker, len(cfg.Agent.Strategies))
-	strategyIDs := make(map[domain.InstrumentID]domain.StrategyID, len(cfg.Agent.Strategies))
-	riskGates := make(map[domain.StrategyID]agent.SignalRisk, len(cfg.Agent.Strategies))
-	tradingDayKeys := make(map[domain.StrategyID]func(time.Time) string, len(cfg.Agent.Strategies))
-	subscriptions := make([]exchange.Subscription, 0, len(cfg.Agent.Strategies))
+	bindings := make([]agent.StrategyBinding, 0, len(cfg.Agent.Strategies))
+	instrumentOwners := make(map[domain.InstrumentID]domain.StrategyID, len(cfg.Agent.Strategies))
 	now := time.Now().UTC()
 	for _, configured := range cfg.Agent.Strategies {
 		requestedInstrumentID := domain.InstrumentID(configured.Instrument)
@@ -137,7 +134,7 @@ func runAgent(ctx context.Context, configPath string, cfg appconfig.Config) erro
 			return fmt.Errorf("strategy %q instrument: %w", configured.ID, instrumentErr)
 		}
 		instrumentID := instrument.ID
-		if owner := strategyIDs[instrumentID]; owner != "" {
+		if owner := instrumentOwners[instrumentID]; owner != "" {
 			return fmt.Errorf("strategies %q and %q resolve to the same instrument %q", owner, configured.ID, instrumentID)
 		}
 		interval, intervalErr := builtin.CandleInterval(configured)
@@ -186,31 +183,31 @@ func runAgent(ctx context.Context, configPath string, cfg appconfig.Config) erro
 		if gateErr != nil {
 			return fmt.Errorf("build persistent risk gate %q: %w", configured.ID, gateErr)
 		}
-		workers[instrumentID] = worker
-		strategyIDs[instrumentID] = strategyID
-		riskGates[strategyID] = riskGate
-		tradingDayKeys[strategyID] = func(at time.Time) string { return policy.At(at).Key }
-		subscriptions = append(subscriptions, exchange.Subscription{
-			InstrumentID: instrumentID, Kind: exchange.SubscriptionCandles, Interval: interval,
+		instrumentOwners[instrumentID] = strategyID
+		bindings = append(bindings, agent.StrategyBinding{
+			ID: strategyID, InstrumentID: instrumentID, Worker: worker, Risk: riskGate,
+			Subscription: exchange.Subscription{
+				InstrumentID: instrumentID, Kind: exchange.SubscriptionCandles, Interval: interval,
+			},
+			TradingDayKey: func(at time.Time) string { return policy.At(at).Key },
 		})
 	}
-	runtime := agent.Runtime{
-		Logger:         logger,
-		Exchange:       adapter,
-		Workers:        workers,
-		StrategyIDs:    strategyIDs,
-		Risks:          riskGates,
-		Intents:        store,
-		Lifecycle:      store,
-		Subscriptions:  subscriptions,
-		TradingDayKeys: tradingDayKeys,
-		Reconciler:     agent.Reconciler{Exchange: adapter, Store: store},
-		HistorySource:  tinvest.ExecutionHistorySource,
+	runtime, err := agent.NewRuntime(agent.RuntimeConfig{
+		Logger:        logger,
+		Exchange:      adapter,
+		Strategies:    bindings,
+		Store:         store,
+		Lifecycle:     store,
+		Reconciler:    agent.Reconciler{Exchange: adapter, Store: store},
+		HistorySource: tinvest.ExecutionHistorySource,
 		// Sandbox bootstrap is deliberately bounded. Production will require an
 		// explicit bootstrap_from before live trading is enabled.
 		HistoryBootstrap:       24 * time.Hour,
 		HistoryOverlap:         15 * time.Minute,
 		HistoryVisibilityDelay: 5 * time.Minute,
+	})
+	if err != nil {
+		return fmt.Errorf("build agent runtime: %w", err)
 	}
 	if err := runtime.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		return err

@@ -92,16 +92,13 @@ func TestRuntimeIsolatesWorkerFailureAndKeepsPeerStrategyRunning(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange:      adapter,
-			Workers:       workers,
-			StrategyIDs:   strategyIDs,
-			Risks:         risks,
-			Intents:       store,
-			Lifecycle:     lifecycle,
-			Subscriptions: subscriptions,
-			Ready:         ready,
-			OnOrder:       func(order domain.Order) { orders <- order },
-			Now:           func() time.Time { return started.Add(20 * time.Minute) },
+			Exchange:   adapter,
+			Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+			Intents:    store,
+			Lifecycle:  lifecycle,
+			Ready:      ready,
+			OnOrder:    func(order domain.Order) { orders <- order },
+			Now:        func() time.Time { return started.Add(20 * time.Minute) },
 		}).Run(runCtx)
 	}()
 
@@ -171,19 +168,17 @@ func TestRuntimeRecordsLateExecutionAfterOwningWorkerFails(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
+	risks := map[domain.StrategyID]SignalRisk{
+		"ma-a": &multiRecoveryRisk{},
+		"ma-b": &multiRecoveryRisk{},
+	}
 	go func() {
 		done <- (Runtime{
-			Exchange:    adapter,
-			Workers:     workers,
-			StrategyIDs: strategyIDs,
-			Risks: map[domain.StrategyID]SignalRisk{
-				"ma-a": &multiRecoveryRisk{},
-				"ma-b": &multiRecoveryRisk{},
-			},
-			Intents:       store,
-			Lifecycle:     lifecycle,
-			Subscriptions: subscriptions,
-			Ready:         ready,
+			Exchange:   adapter,
+			Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+			Intents:    store,
+			Lifecycle:  lifecycle,
+			Ready:      ready,
 		}).Run(runCtx)
 	}()
 

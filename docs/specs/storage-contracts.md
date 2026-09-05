@@ -76,7 +76,6 @@ internal/storage/sqlite/
 db/sqlite/
     migrations/
     queries/
-    schema.sql
 
 db/postgres/
     README.md
@@ -737,17 +736,14 @@ db/sqlite/queries/
     control.sql
     query.sql
     backtest.sql
-db/sqlite/schema.sql
 sqlc.sqlite.yaml
 internal/storage/sqlite/generated/
 ```
 
 Правила:
 
-- migrations являются source of truth;
-- `schema.sql` генерируется/проверяется из актуальных migrations либо явно
-  документируется как sqlc input snapshot; не редактировать два источника
-  независимо;
+- migrations являются единственным source of truth и одновременно schema input
+  для `sqlc`; отдельный snapshot не поддерживается;
 - sqlc queries группируются по use case, не только по таблицам;
 - generated code не редактируется;
 - migration runner хранит monotonically increasing version и dirty/error state;

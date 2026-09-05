@@ -65,6 +65,12 @@ exchange execution
 
 ## Startup sequence
 
+До startup CLI собирает один `StrategyBinding` на каждую strategy instance.
+`NewRuntime` отклоняет пустые и дублирующиеся strategy/instrument IDs, nil
+worker/risk gate, невалидную subscription и несовпадение instrument между
+binding и subscription. Routing maps выводятся из этого списка и не являются
+отдельной конфигурацией.
+
 Порядок важен и не должен упрощаться без доказательства безопасности:
 
 1. Persist strategy lifecycle `reconciling`.
@@ -110,4 +116,3 @@ ready -> cancelling -> confirmed | unknown | not_applied | superseded
 ордера и состояние команды отмены — разные факты. Также нужно защитить
 projection от регрессии `cancelled -> partially_filled` при поздней доставке
 fill, исполненного до отмены.
-

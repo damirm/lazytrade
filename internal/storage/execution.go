@@ -36,20 +36,13 @@ type AuditEvent struct {
 	CreatedAt time.Time
 }
 
-type IntentStore interface {
-	CreateOrderIntent(context.Context, OrderIntent) (OrderIntent, error)
+type IntentLookupStore interface {
 	GetOrderIntentByClientOrderID(context.Context, domain.ClientOrderID) (OrderIntent, error)
 }
 
 type AuditStore interface {
 	AppendAudit(context.Context, AuditEvent) error
 	ListAudit(context.Context, uint32) ([]AuditEvent, error)
-}
-
-// IntentAuditStore is the narrow atomic boundary used after an allowed risk
-// decision. Implementations must commit both records or neither.
-type IntentAuditStore interface {
-	RecordIntentAndAudit(context.Context, OrderIntent, AuditEvent) error
 }
 
 type ExchangeOrder struct {
@@ -95,13 +88,6 @@ type Position struct {
 	AveragePrice domain.Price
 	Revision     uint64
 	UpdatedAt    time.Time
-}
-
-type ExecutionStore interface {
-	// RecordExecution returns false for an already applied exchange fill.
-	RecordExecution(context.Context, domain.ExchangeAccountID, domain.Execution, time.Time, string) (bool, error)
-	LoadPosition(context.Context, domain.StrategyID, domain.InstrumentID) (Position, error)
-	LoadDailyStatistics(context.Context, domain.StrategyID, string, string) (DailyStatistics, error)
 }
 
 // OrderCommissionStore applies cumulative exchange commission observations.

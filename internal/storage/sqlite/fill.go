@@ -15,14 +15,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func (s *Store) RecordExecution(ctx context.Context, accountID domain.ExchangeAccountID, execution domain.Execution, receivedAt time.Time, tradingDay string) (bool, error) {
-	entry, _, err := s.StageExecution(ctx, accountID, execution, receivedAt, tradingDay)
-	if err != nil {
-		return false, err
-	}
-	return s.ApplyStagedExecution(ctx, entry.ID)
-}
-
 func (s *Store) ApplyStagedExecution(ctx context.Context, inboxID string) (bool, error) {
 	if inboxID == "" {
 		return false, errors.New("sqlite: execution inbox ID is empty")

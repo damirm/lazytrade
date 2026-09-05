@@ -243,13 +243,16 @@ func historyRuntime(
 	now time.Time,
 	ready chan<- struct{},
 ) Runtime {
+	subscription := exchange.Subscription{
+		InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+	}
 	return Runtime{
-		Exchange: adapter, Worker: worker,
-		Risk: &recordingRisk{decision: RiskDecision{Allowed: true}}, Intents: store,
-		Subscription: exchange.Subscription{
-			InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
-		},
-		Ready: ready, Now: func() time.Time { return now }, Reconciler: reconciler,
+		Exchange: adapter,
+		Strategies: singleTestStrategy(
+			worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, subscription, nil,
+		),
+		Intents: store,
+		Ready:   ready, Now: func() time.Time { return now }, Reconciler: reconciler,
 		HistorySource: "test_history", HistoryBootstrap: 48 * time.Hour, HistoryOverlap: time.Hour,
 	}
 }

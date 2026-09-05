@@ -72,17 +72,10 @@ func runtimeTerminalStatus(ctx context.Context, runErr error) (string, string) {
 }
 
 func (r Runtime) lifecycleStrategyIDs() []domain.StrategyID {
-	unique := make(map[domain.StrategyID]struct{}, len(r.StrategyIDs)+len(r.Risks))
-	for _, strategyID := range r.StrategyIDs {
-		if strategyID.Validate() == nil {
-			unique[strategyID] = struct{}{}
-		}
-	}
-	if len(unique) == 0 {
-		for strategyID := range r.Risks {
-			if strategyID.Validate() == nil {
-				unique[strategyID] = struct{}{}
-			}
+	unique := make(map[domain.StrategyID]struct{}, len(r.Strategies))
+	for _, binding := range r.Strategies {
+		if binding.ID.Validate() == nil {
+			unique[binding.ID] = struct{}{}
 		}
 	}
 	result := make([]domain.StrategyID, 0, len(unique))
@@ -188,9 +181,9 @@ func (r Runtime) isolateStrategyFailure(
 	if _, alreadyFailed := failed[strategyFailure.StrategyID]; alreadyFailed {
 		return true, nil
 	}
-	for instrumentID, strategyID := range r.StrategyIDs {
-		if strategyID == strategyFailure.StrategyID {
-			delete(activeWorkers, instrumentID)
+	for _, binding := range r.Strategies {
+		if binding.ID == strategyFailure.StrategyID {
+			delete(activeWorkers, binding.InstrumentID)
 		}
 	}
 	if err := r.terminalizeFailedStrategySignals(ctx, strategyFailure.StrategyID); err != nil {

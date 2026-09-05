@@ -6,6 +6,8 @@
 make build
 make test
 make test-race
+make sqlc-generate
+make sqlc-check
 make version
 make config-validate
 ```
@@ -23,7 +25,10 @@ make build BINARY=/tmp/lazytrade
 ```
 
 `make check` выполняет `go vet ./...` и `go test ./...`. `make fmt` изменяет
-Go-файлы через `gofmt`; остальные проверочные цели исходники не изменяют.
+Go-файлы через `gofmt`. `make sqlc-generate` строит SQLite generated code
+непосредственно по forward-миграциям, а `make sqlc-check` после генерации
+завершается ошибкой при незакоммиченном diff generated files. Остальные
+проверочные цели исходники не изменяют.
 Makefile намеренно не содержит целей, размещающих sandbox orders, создающих или
 пополняющих счета, а также включающих production trading.
 
@@ -39,7 +44,8 @@ Makefile намеренно не содержит целей, размещающ
 - Для поиска использовать `rg`/`rg --files`.
 - Ручные изменения делать через patch; не перезаписывать пользовательские
   изменения и не выполнять destructive git commands.
-- SQL source находится в `db/sqlite/migrations` и `db/sqlite/queries`.
+- Единственный источник SQLite schema находится в `db/sqlite/migrations`, а
+  SQL-запросы — в `db/sqlite/queries`; отдельный schema snapshot не ведётся.
 - `internal/storage/sqlite/generated` — sqlc output; менять source query/schema,
   затем регенерировать, если изменение требует sqlc.
 - Применённые migration files не редактировать; создавать новую migration.

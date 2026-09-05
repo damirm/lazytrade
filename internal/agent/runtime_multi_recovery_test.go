@@ -47,8 +47,8 @@ func TestRuntimeRecoversTwoStrategiesThroughTheirOwnRiskGatesWithoutDuplicates(t
 	}
 
 	orders := runMultiRecoveryRuntime(t, Runtime{
-		Exchange: adapter, Workers: workers, StrategyIDs: strategyIDs,
-		Risks: risks, Intents: store, Subscriptions: subscriptions,
+		Exchange: adapter, Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+		Intents: store,
 	})
 	if len(orders) != 2 {
 		t.Fatalf("recovered orders = %d, want 2", len(orders))
@@ -67,8 +67,8 @@ func TestRuntimeRecoversTwoStrategiesThroughTheirOwnRiskGatesWithoutDuplicates(t
 	}
 
 	restartOrders := runMultiRecoveryRuntime(t, Runtime{
-		Exchange: adapter, Workers: workers, StrategyIDs: strategyIDs,
-		Risks: risks, Intents: store, Subscriptions: subscriptions,
+		Exchange: adapter, Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+		Intents: store,
 	})
 	if len(restartOrders) != 0 {
 		t.Fatalf("orders emitted on clean restart = %#v", restartOrders)

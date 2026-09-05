@@ -12,24 +12,6 @@ import (
 	"github.com/damirm/lazytrade/internal/storage/sqlite/generated"
 )
 
-func (s *Store) CreateOrderIntent(ctx context.Context, intent storage.OrderIntent) (storage.OrderIntent, error) {
-	params, err := intentParams(intent)
-	if err != nil {
-		return storage.OrderIntent{}, err
-	}
-	if err := s.queries.InsertOrderIntent(ctx, params); err == nil {
-		return intent, nil
-	}
-	existing, getErr := s.GetOrderIntentByClientOrderID(ctx, intent.ClientOrderID)
-	if getErr == nil && sameIntent(existing, intent) {
-		return existing, nil
-	}
-	if getErr == nil {
-		return storage.OrderIntent{}, fmt.Errorf("order intent client ID %s: %w", intent.ClientOrderID, storage.ErrConflict)
-	}
-	return storage.OrderIntent{}, fmt.Errorf("sqlite: insert order intent %s: %w", intent.ID, storage.ErrConflict)
-}
-
 func (s *Store) GetOrderIntentByClientOrderID(ctx context.Context, id domain.ClientOrderID) (storage.OrderIntent, error) {
 	row, err := s.queries.GetOrderIntentByClientOrderID(ctx, string(id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -451,35 +433,4 @@ func (s *Store) ListAudit(ctx context.Context, limit uint32) ([]storage.AuditEve
 		})
 	}
 	return result, nil
-}
-
-func (s *Store) RecordIntentAndAudit(ctx context.Context, intent storage.OrderIntent, audit storage.AuditEvent) error {
-	params, err := intentParams(intent)
-	if err != nil {
-		return err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("sqlite: begin intent transaction: %w", err)
-	}
-	defer tx.Rollback()
-	q := generated.New(tx)
-	if err := q.InsertOrderIntent(ctx, params); err != nil {
-		return fmt.Errorf("sqlite: insert intent in transaction: %w", storage.ErrConflict)
-	}
-	if err := appendAudit(ctx, q, audit); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("sqlite: commit intent transaction: %w", err)
-	}
-	return nil
-}
-
-func sameIntent(left, right storage.OrderIntent) bool {
-	return left.ID == right.ID && left.SignalID == right.SignalID &&
-		left.StrategyID == right.StrategyID && left.ExchangeAccountID == right.ExchangeAccountID &&
-		left.InstrumentID == right.InstrumentID && left.ClientOrderID == right.ClientOrderID &&
-		left.Side == right.Side && left.OrderType == right.OrderType &&
-		left.Quantity.Value.Equal(right.Quantity.Value) && left.PayloadChecksum == right.PayloadChecksum
 }

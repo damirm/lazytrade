@@ -101,15 +101,16 @@ func TestRuntimeLifecycleIsRunningWhileReadyAndStoppedOnCancellation(t *testing.
 	ready := make(chan struct{}, 1)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	risks := map[domain.StrategyID]SignalRisk{
+		"ma-a": &multiRecoveryRisk{},
+		"ma-b": &multiRecoveryRisk{},
+	}
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Workers: workers, StrategyIDs: strategyIDs,
-			Risks: map[domain.StrategyID]SignalRisk{
-				"ma-a": &multiRecoveryRisk{},
-				"ma-b": &multiRecoveryRisk{},
-			},
-			Intents: store, Lifecycle: lifecycle,
-			Subscriptions: subscriptions, Ready: ready,
+			Exchange:   adapter,
+			Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+			Intents:    store, Lifecycle: lifecycle,
+			Ready: ready,
 		}).Run(runCtx)
 	}()
 
@@ -148,15 +149,16 @@ func TestRuntimeLifecycleBlocksAllStrategiesOnExecutionStreamError(t *testing.T)
 	}
 	ready := make(chan struct{}, 1)
 	done := make(chan error, 1)
+	risks := map[domain.StrategyID]SignalRisk{
+		"ma-a": &multiRecoveryRisk{},
+		"ma-b": &multiRecoveryRisk{},
+	}
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Workers: workers, StrategyIDs: strategyIDs,
-			Risks: map[domain.StrategyID]SignalRisk{
-				"ma-a": &multiRecoveryRisk{},
-				"ma-b": &multiRecoveryRisk{},
-			},
-			Intents: store, Lifecycle: lifecycle,
-			Subscriptions: subscriptions, Ready: ready,
+			Exchange:   adapter,
+			Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+			Intents:    store, Lifecycle: lifecycle,
+			Ready: ready,
 		}).Run(context.Background())
 	}()
 

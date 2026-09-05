@@ -60,6 +60,10 @@ infrastructure adapters:
 - Signal ID детерминирован из strategy ID, event cursor, ordinal и payload.
 - Live и backtest строят built-in стратегии через общий
   `internal/strategy/builtin` composition point.
+- Live runtime создаётся через `agent.NewRuntime(RuntimeConfig)`. Каждая
+  стратегия задаётся одним `StrategyBinding`, который связывает strategy ID,
+  instrument, worker, risk gate, subscription и trading-day policy. Отдельных
+  single-strategy полей и параллельных routing maps нет.
 - Текущий runtime маршрутизирует события по instrument ID, поэтому один
   инструмент может принадлежать только одной strategy instance.
 
@@ -103,4 +107,3 @@ infrastructure adapters:
 - Полная DCA-корзина: calendar events, occurrence ledger, allocation items и
   budget-to-lot sizing.
 - Durable cancellation command: отдельная сущность, а не новый `OrderStatus`.
-

@@ -48,6 +48,14 @@ type BacktestRun struct {
 	ErrorMessage       sql.NullString `json:"error_message"`
 }
 
+type ControlState struct {
+	ScopeType string `json:"scope_type"`
+	ScopeID   string `json:"scope_id"`
+	State     string `json:"state"`
+	Reason    string `json:"reason"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
 type DailyStatistic struct {
 	StrategyID    string `json:"strategy_id"`
 	TradingDay    string `json:"trading_day"`
@@ -60,6 +68,16 @@ type DailyStatistic struct {
 	TradeCount    int64  `json:"trade_count"`
 	Complete      int64  `json:"complete"`
 	UpdatedAt     int64  `json:"updated_at"`
+}
+
+type EquitySnapshot struct {
+	ID           string `json:"id"`
+	StrategyID   string `json:"strategy_id"`
+	TradingDay   string `json:"trading_day"`
+	EquityAmount string `json:"equity_amount"`
+	Asset        string `json:"asset"`
+	SnapshotType string `json:"snapshot_type"`
+	CapturedAt   int64  `json:"captured_at"`
 }
 
 type ExecutionInbox struct {

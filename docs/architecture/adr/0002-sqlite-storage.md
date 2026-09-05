@@ -37,8 +37,7 @@ MVP поддерживает macOS/Linux. Для Windows потребуется 
 - PostgreSQL получит собственные migrations/queries и session advisory lock.
 - In-memory SQLite не предоставляет production agent lock; contract tests
   lock используют реальный временный файл.
-- `schema.sql` является sqlc input snapshot, а migrations — единственный
-  runtime source of truth.
+- Forward-миграции являются runtime source of truth.
 
 ## Дополнение 2026-09-05
 
@@ -46,3 +45,11 @@ MVP поддерживает macOS/Linux. Для Windows потребуется 
 Возврат к нескольким connections допустим только после тестов конкурентного
 execution inbox/recovery и доказательства отсутствия `SQLITE_BUSY`; исходное
 число четыре больше не является целевым значением.
+
+## Дополнение 2026-09-06
+
+Отдельный `db/sqlite/schema.sql` удалён после обнаружения расхождений с
+миграциями. `sqlc.sqlite.yaml` читает каталог `db/sqlite/migrations` напрямую,
+поэтому runtime migration runner и генератор запросов используют одно описание
+схемы. Новая forward-миграция автоматически входит в следующий запуск
+`sqlc generate`; generated code проверяется через `make sqlc-check`.

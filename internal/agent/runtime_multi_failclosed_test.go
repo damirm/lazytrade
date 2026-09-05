@@ -65,14 +65,14 @@ func TestMultiStrategyRuntimeFailsClosedWhenExecutionStreamBreaks(t *testing.T) 
 			runCtx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
+			risks := map[domain.StrategyID]SignalRisk{
+				"ma-a": &multiRecoveryRisk{},
+				"ma-b": &multiRecoveryRisk{},
+			}
 			go func() {
 				done <- (Runtime{
-					Exchange: adapter, Workers: workers, StrategyIDs: strategyIDs,
-					Risks: map[domain.StrategyID]SignalRisk{
-						"ma-a": &multiRecoveryRisk{},
-						"ma-b": &multiRecoveryRisk{},
-					},
-					Intents: store, Subscriptions: subscriptions, Ready: ready,
+					Exchange: adapter, Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+					Intents: store, Ready: ready,
 				}).Run(runCtx)
 			}()
 			select {

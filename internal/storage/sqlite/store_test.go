@@ -61,6 +61,21 @@ func registerAndCommitSignal(t *testing.T, store *storesqlite.Store) domain.Sign
 	return signal
 }
 
+func recordAllowedIntent(t *testing.T, store *storesqlite.Store, intent storage.OrderIntent) {
+	t.Helper()
+	err := store.RecordAllowedDecisionIntent(context.Background(), storage.RiskDecision{
+		ID: "decision-" + intent.ID, SignalID: intent.SignalID, Decision: "allow",
+		ReasonCode: "test_allowed", Payload: json.RawMessage(`{}`), CreatedAt: intent.CreatedAt,
+	}, intent, storage.AuditEvent{
+		ID: "audit-" + intent.ID, EventType: "risk_allowed", Actor: "test",
+		ScopeType: "order_intent", ScopeID: intent.ID,
+		Payload: json.RawMessage(`{}`), CreatedAt: intent.CreatedAt,
+	})
+	if err != nil {
+		t.Fatalf("record allowed intent %s: %v", intent.ID, err)
+	}
+}
+
 func TestMigrationAndPragmas(t *testing.T) {
 	store := openStore(t)
 	ctx := context.Background()
@@ -127,9 +142,7 @@ func TestDurableIntentPhaseTransitionIsAtomicCAS(t *testing.T) {
 		PayloadChecksum: "phase-checksum", CreatedAt: fixedTime, UpdatedAt: fixedTime,
 	}
 	ctx := context.Background()
-	if _, err := store.CreateOrderIntent(ctx, intent); err != nil {
-		t.Fatal(err)
-	}
+	recordAllowedIntent(t, store, intent)
 	audit := storage.AuditEvent{
 		ID: "audit-submitting", EventType: "order_intent_submitting", Actor: "agent",
 		ScopeType: "order_intent", ScopeID: intent.ID, Payload: json.RawMessage(`{"from":"ready"}`),
@@ -152,7 +165,7 @@ func TestDurableIntentPhaseTransitionIsAtomicCAS(t *testing.T) {
 		t.Fatalf("stale transition error=%v", err)
 	}
 	events, err := store.ListAudit(ctx, 10)
-	if err != nil || len(events) != 1 || events[0].ID != audit.ID {
+	if err != nil || len(events) != 2 || events[1].ID != audit.ID {
 		t.Fatalf("audit after stale CAS=%+v error=%v", events, err)
 	}
 	unresolved, err := store.ListPendingOrderIntents(ctx, 10)
@@ -264,7 +277,7 @@ func TestStrategyLifecycleUpdateRequiresExistingRuntime(t *testing.T) {
 	}
 }
 
-func TestOrderIntentIdempotencyAndConflict(t *testing.T) {
+func TestAllowedIntentDuplicateConflictsWithoutChangingPersistedIntent(t *testing.T) {
 	store := openStore(t)
 	signal := registerAndCommitSignal(t, store)
 	quantity, _ := domain.NewQuantity("1.25")
@@ -275,18 +288,21 @@ func TestOrderIntentIdempotencyAndConflict(t *testing.T) {
 		Quantity: quantity, Status: "created", PayloadChecksum: "intent-checksum",
 		CreatedAt: fixedTime, UpdatedAt: fixedTime,
 	}
-	ctx := context.Background()
-	if _, err := store.CreateOrderIntent(ctx, intent); err != nil {
-		t.Fatal(err)
+	recordAllowedIntent(t, store, intent)
+	err := store.RecordAllowedDecisionIntent(context.Background(), storage.RiskDecision{
+		ID: "decision-duplicate", SignalID: signal.ID, Decision: "allow",
+		ReasonCode: "test_allowed", Payload: json.RawMessage(`{}`), CreatedAt: fixedTime,
+	}, intent, storage.AuditEvent{
+		ID: "audit-duplicate", EventType: "risk_allowed", Actor: "test",
+		ScopeType: "order_intent", ScopeID: intent.ID,
+		Payload: json.RawMessage(`{}`), CreatedAt: fixedTime,
+	})
+	if !errors.Is(err, storage.ErrConflict) {
+		t.Fatalf("duplicate allowed intent error=%v", err)
 	}
-	if _, err := store.CreateOrderIntent(ctx, intent); err != nil {
-		t.Fatalf("exact duplicate: %v", err)
-	}
-	conflict := intent
-	conflict.ID = "intent-2"
-	conflict.PayloadChecksum = "other"
-	if _, err := store.CreateOrderIntent(ctx, conflict); !errors.Is(err, storage.ErrConflict) {
-		t.Fatalf("conflict error=%v", err)
+	got, err := store.GetOrderIntentByClientOrderID(context.Background(), intent.ClientOrderID)
+	if err != nil || got.ID != intent.ID || got.PayloadChecksum != intent.PayloadChecksum {
+		t.Fatalf("persisted intent=%+v error=%v", got, err)
 	}
 }
 
@@ -302,9 +318,7 @@ func TestExecutionInboxStagesThenAppliesAtomically(t *testing.T) {
 		Quantity: quantity, Status: "ready", PayloadChecksum: "inbox-intent-checksum",
 		CreatedAt: fixedTime, UpdatedAt: fixedTime,
 	}
-	if _, err := store.CreateOrderIntent(context.Background(), intent); err != nil {
-		t.Fatal(err)
-	}
+	recordAllowedIntent(t, store, intent)
 	order := storage.ExchangeOrder{
 		ID: "local-order", OrderIntentID: intent.ID, ExchangeAccountID: intent.ExchangeAccountID,
 		ExchangeOrderID: "exchange-order", Status: "accepted", RequestedQuantity: quantity,
@@ -517,7 +531,11 @@ func TestAuditAppendOrderingAndTransactionRollback(t *testing.T) {
 		OrderType: domain.OrderTypeMarket, Quantity: quantity, Status: "created",
 		PayloadChecksum: "checksum", CreatedAt: fixedTime, UpdatedAt: fixedTime,
 	}
-	if err := store.RecordIntentAndAudit(ctx, intent, audit); !errors.Is(err, storage.ErrConflict) {
+	decision := storage.RiskDecision{
+		ID: "decision-rollback", SignalID: signal.ID, Decision: "allow",
+		ReasonCode: "test_allowed", Payload: json.RawMessage(`{}`), CreatedAt: fixedTime,
+	}
+	if err := store.RecordAllowedDecisionIntent(ctx, decision, intent, audit); !errors.Is(err, storage.ErrConflict) {
 		t.Fatalf("transaction error=%v", err)
 	}
 	if _, err := store.GetOrderIntentByClientOrderID(ctx, intent.ClientOrderID); !errors.Is(err, storage.ErrNotFound) {

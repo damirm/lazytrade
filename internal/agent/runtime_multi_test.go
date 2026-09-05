@@ -94,8 +94,8 @@ func TestRuntimeRunsTwoStrategiesThroughSharedStreams(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- (Runtime{
-			Exchange: adapter, Workers: workers, StrategyIDs: strategyIDs, Risks: risks,
-			Intents: store, Subscriptions: subscriptions, Ready: ready,
+			Exchange: adapter, Strategies: testStrategyBindings(t, workers, strategyIDs, risks, subscriptions),
+			Intents: store, Ready: ready,
 			OnOrder: func(order domain.Order) { orders <- order },
 			Now:     func() time.Time { return started.Add(20 * time.Minute) },
 		}).Run(runCtx)
