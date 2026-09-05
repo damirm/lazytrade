@@ -1,0 +1,150 @@
+version: 1
+
+database:
+  driver: sqlite
+  dsn: ./lazytrade.db
+
+logging:
+  level: info
+  format: json
+  output: stderr
+
+exchanges:
+  tinvest-main:
+    type: tinvest
+    token_env: TINVEST_SANDBOX_TOKEN
+    account_id_env: TINVEST_ACCOUNT_ID
+    ca_cert_path: ../misc/certs/russiantrustedca
+    sandbox: true
+    allow_live_trading: false
+
+agent:
+  web:
+    listen: 127.0.0.1:8080
+    auth_token_env: LAZYTRADE_WEB_TOKEN
+  emergency_stop: false
+  strategies:
+    - id: sber-ma
+      exchange: tinvest-main
+      instrument: BBG004730N88
+      strategy:
+        type: moving_average_cross
+        params:
+          candle_interval: 1m
+          fast_period: 10
+          slow_period: 30
+      execution:
+        quantity: "1"
+        order_type: market
+      trading_day:
+        timezone: Europe/Moscow
+        reset_at: "00:00"
+      risk:
+        max_daily_loss:
+          amount: "1000"
+          asset: RUB
+          pnl: total
+          action: pause
+        max_position_value:
+          amount: "15000"
+          asset: RUB
+    - id: gazp-ma
+      exchange: tinvest-main
+      instrument: GAZP_TQBR
+      strategy:
+        type: moving_average_cross
+        params:
+          candle_interval: 1m
+          fast_period: 15
+          slow_period: 40
+      execution:
+        quantity: "10"
+        order_type: market
+      trading_day:
+        timezone: Europe/Moscow
+        reset_at: "00:00"
+      risk:
+        max_daily_loss:
+          amount: "1000"
+          asset: RUB
+          pnl: total
+          action: pause
+        max_position_value:
+          amount: "15000"
+          asset: RUB
+    - id: lkoh-monthly-dca
+      exchange: tinvest-main
+      instrument: LKOH_TQBR
+      strategy:
+        type: periodic_investment
+        params:
+          candle_interval: 1m
+          day_of_month: 10
+          time: "11:00"
+          timezone: Europe/Moscow
+      execution:
+        quantity: "1"
+        order_type: market
+      trading_day:
+        timezone: Europe/Moscow
+        reset_at: "00:00"
+      risk:
+        max_daily_loss:
+          amount: "1000"
+          asset: RUB
+          pnl: total
+          action: pause
+        max_position_value:
+          amount: "100000"
+          asset: RUB
+
+terminal:
+  refresh_interval: 250ms
+  tabs:
+    - title: SBER
+      exchange: tinvest-main
+      instrument: BBG004730N88
+      panels:
+        - type: chart
+          mode: candles
+          interval: 1m
+          history: 120
+          overlays:
+            - type: sma
+              period: 10
+            - type: sma
+              period: 30
+        - type: order_book
+          depth: 10
+        - type: trades
+          limit: 30
+
+backtest:
+  runs:
+    - id: sber-ma-2025
+      strategy: sber-ma
+      data:
+        type: csv
+        path: ./data/sber-1m-2025.csv
+        interval: 1m
+        price_asset: RUB
+        timezone: Europe/Moscow
+        tick_size: "0.01"
+        lot_size: "1"
+        gap_policy: fail
+      execution:
+        initial_cash:
+          amount: "100000"
+          asset: RUB
+        commission:
+          type: percent
+          value: "0.03"
+        slippage:
+          type: basis_points
+          value: "5"
+        market_fill: next_open
+        limit_fill: touch
+      output:
+        directory: ./backtests/sber-ma-2025
+        json: true
+        trades_csv: true

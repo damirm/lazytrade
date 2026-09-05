@@ -1,0 +1,61 @@
+version: 1
+
+exchanges:
+  tinvest-main:
+    type: tinvest
+    sandbox: true
+
+agent:
+  strategies:
+    - id: sber-ma
+      exchange: tinvest-main
+      instrument: BBG004730N88
+      strategy:
+        type: moving_average_cross
+        params:
+          candle_interval: 1m
+          fast_period: 10
+          slow_period: 30
+      execution:
+        # SBER candles are normalized to instrument units; the quantity must
+        # be a multiple of the lot_size recorded in the dataset manifest.
+        quantity: "10"
+        order_type: market
+      trading_day:
+        timezone: Europe/Moscow
+        reset_at: "00:00"
+      risk:
+        max_daily_loss:
+          amount: "1000"
+          asset: RUB
+          pnl: total
+          action: pause
+        max_position_value:
+          amount: "15000"
+          asset: RUB
+
+backtest:
+  runs:
+    - id: sber-ma
+      strategy: sber-ma
+      data:
+        type: csv
+        path: ../data/sber-1m.csv
+        metadata_path: ../data/sber-1m.csv.metadata.json
+        gap_policy: mark
+      execution:
+        initial_cash:
+          amount: "100000"
+          asset: RUB
+        commission:
+          type: percent
+          value: "0.03"
+        slippage:
+          type: basis_points
+          value: "5"
+        market_fill: next_open
+        limit_fill: touch
+      output:
+        directory: ../backtests/sber-ma
+        json: true
+        trades_csv: true
