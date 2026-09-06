@@ -10,6 +10,7 @@ ADR фиксируют уже принятые архитектурные реш
 - [ADR-0002: SQLite storage](0002-sqlite-storage.md)
 - [ADR-0003: T-Invest Go SDK](0003-tinvest-go-sdk.md)
 - [ADR-0004: структурированные логи через log/slog](0004-structured-logging.md)
+- [ADR-0005: отдельный lifecycle стратегии](0005-separate-strategy-lifecycle.md)
 
 Новые ADR получают следующий номер. Принятый ADR не переписывается так, будто
 первоначального решения не было: существенная замена оформляется новым ADR со

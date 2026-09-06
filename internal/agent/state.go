@@ -61,7 +61,7 @@ func (p *PersistentStatePort) Commit(ctx context.Context, id domain.StrategyID, 
 	err := p.store.CommitEvent(ctx, storage.StrategyEventCommit{
 		StrategyID: id, ExpectedVersion: p.revisions[id],
 		StateVersion: snapshot.State.Version, StatePayload: snapshot.State.Payload,
-		RuntimeStatus: "running", EventCursor: *snapshot.LastCursor,
+		EventCursor: *snapshot.LastCursor,
 		StateChecksum: hex.EncodeToString(sum[:]), Signals: signals,
 		UpdatedAt: snapshot.LastCursor.Timestamp.UTC(),
 	})

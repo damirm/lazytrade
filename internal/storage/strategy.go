@@ -13,11 +13,16 @@ type StrategyRuntime struct {
 	StateVersion  uint32
 	StatePayload  json.RawMessage
 	Revision      uint64
-	RuntimeStatus string
-	StatusReason  string
 	EventCursor   domain.EventCursor
 	StateChecksum string
 	UpdatedAt     time.Time
+}
+
+type StrategyLifecycle struct {
+	StrategyID domain.StrategyID
+	Status     string
+	Reason     string
+	UpdatedAt  time.Time
 }
 
 type StrategyEventCommit struct {
@@ -25,8 +30,6 @@ type StrategyEventCommit struct {
 	ExpectedVersion uint64
 	StateVersion    uint32
 	StatePayload    json.RawMessage
-	RuntimeStatus   string
-	StatusReason    string
 	EventCursor     domain.EventCursor
 	StateChecksum   string
 	Signals         []domain.Signal

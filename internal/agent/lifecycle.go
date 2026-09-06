@@ -26,7 +26,7 @@ type LifecycleStore interface {
 }
 
 type lifecycleRecoveryStore interface {
-	LoadRuntime(context.Context, domain.StrategyID) (storage.StrategyRuntime, error)
+	LoadStrategyLifecycle(context.Context, domain.StrategyID) (storage.StrategyLifecycle, error)
 }
 
 type blockedRuntimeError struct{ err error }
@@ -102,11 +102,6 @@ func (r Runtime) setLifecycle(
 	var result error
 	for _, strategyID := range strategyIDs {
 		err := r.Lifecycle.SetStrategyStatus(ctx, strategyID, status, reason, now)
-		// A brand-new strategy has no strategy_states row until its first
-		// completed market event. Its first event commit persists "running".
-		if errors.Is(err, storage.ErrNotFound) {
-			continue
-		}
 		if err != nil {
 			result = errors.Join(result, fmt.Errorf("strategy %s lifecycle %s: %w", strategyID, status, err))
 			continue
@@ -125,14 +120,14 @@ func (r Runtime) repairFailedStrategySignals(
 		return nil
 	}
 	for _, strategyID := range strategyIDs {
-		state, err := recovery.LoadRuntime(ctx, strategyID)
+		state, err := recovery.LoadStrategyLifecycle(ctx, strategyID)
 		if errors.Is(err, storage.ErrNotFound) {
 			continue
 		}
 		if err != nil {
 			return fmt.Errorf("load strategy %s lifecycle: %w", strategyID, err)
 		}
-		if state.RuntimeStatus == RuntimeStatusFailed {
+		if state.Status == RuntimeStatusFailed {
 			if err := r.terminalizeFailedStrategySignals(ctx, strategyID); err != nil {
 				return fmt.Errorf("repair strategy %s pending signals: %w", strategyID, err)
 			}

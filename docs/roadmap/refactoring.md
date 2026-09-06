@@ -141,6 +141,8 @@ type RuntimeConfig struct {
 
 ### R5. Долговечный lifecycle до первого market event
 
+Статус: реализовано 6 сентября 2026 года.
+
 Проблема: обновление lifecycle игнорирует `storage.ErrNotFound`, пока для новой
 стратегии не появилась первая строка event-state. Падение до первого события
 может не оставить наблюдаемого `reconciling`, `blocked` или `stopped`.

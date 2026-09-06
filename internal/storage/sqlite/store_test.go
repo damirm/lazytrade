@@ -51,8 +51,8 @@ func registerAndCommitSignal(t *testing.T, store *storesqlite.Store) domain.Sign
 	}
 	err := store.CommitEvent(ctx, storage.StrategyEventCommit{
 		StrategyID: definition.ID, ExpectedVersion: 0, StateVersion: 1,
-		StatePayload:  json.RawMessage(`{"fast":"10","slow":"20"}`),
-		RuntimeStatus: "running", EventCursor: cursor, StateChecksum: "state-checksum",
+		StatePayload: json.RawMessage(`{"fast":"10","slow":"20"}`),
+		EventCursor:  cursor, StateChecksum: "state-checksum",
 		Signals: []domain.Signal{signal}, UpdatedAt: fixedTime,
 	})
 	if err != nil {
@@ -102,7 +102,7 @@ func TestMigrationAndPragmas(t *testing.T) {
 		Scan(&version, &dirty); err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 || dirty != 0 {
+	if version != 6 || dirty != 0 {
 		t.Fatalf("schema version=%d dirty=%d", version, dirty)
 	}
 }
@@ -110,7 +110,7 @@ func TestMigrationAndPragmas(t *testing.T) {
 func TestMigrationRejectsDirtyAndNewerSchema(t *testing.T) {
 	t.Run("dirty", func(t *testing.T) {
 		store := openStore(t)
-		if _, err := store.DB().Exec("UPDATE schema_migrations SET dirty=1 WHERE version=5"); err != nil {
+		if _, err := store.DB().Exec("UPDATE schema_migrations SET dirty=1 WHERE version=6"); err != nil {
 			t.Fatal(err)
 		}
 		if err := store.Migrate(context.Background()); err == nil {
@@ -183,6 +183,21 @@ func TestMigrationConvertsLegacyPendingIntentToUnknown(t *testing.T) {
 	_, err = db.Exec(`
 		CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, dirty INTEGER NOT NULL, applied_at INTEGER NOT NULL);
 		INSERT INTO schema_migrations(version, dirty, applied_at) VALUES (2,0,0);
+		CREATE TABLE strategy_instances(
+			id TEXT PRIMARY KEY,
+			exchange_account_id TEXT NOT NULL,
+			instrument_id TEXT NOT NULL,
+			strategy_type TEXT NOT NULL,
+			config_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+		CREATE TABLE strategy_states(
+			strategy_id TEXT PRIMARY KEY,
+			runtime_status TEXT NOT NULL,
+			status_reason TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
 		CREATE TABLE order_intents(id TEXT PRIMARY KEY, status TEXT NOT NULL);
 		INSERT INTO order_intents(id,status) VALUES ('legacy','pending'),('uncertain','unknown');
 	`)
@@ -214,6 +229,59 @@ func TestMigrationConvertsLegacyPendingIntentToUnknown(t *testing.T) {
 	}
 }
 
+func TestMigrationBackfillsStrategyLifecycle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "version-5.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, dirty INTEGER NOT NULL, applied_at INTEGER NOT NULL);
+		INSERT INTO schema_migrations(version, dirty, applied_at) VALUES (5,0,0);
+		CREATE TABLE strategy_instances(
+			id TEXT PRIMARY KEY,
+			exchange_account_id TEXT NOT NULL,
+			instrument_id TEXT NOT NULL,
+			strategy_type TEXT NOT NULL,
+			config_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+		CREATE TABLE strategy_states(
+			strategy_id TEXT PRIMARY KEY,
+			runtime_status TEXT NOT NULL,
+			status_reason TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+		INSERT INTO strategy_instances VALUES
+			('with-state','account','instrument-a','test','hash-a',100,200),
+			('without-state','account','instrument-b','test','hash-b',300,400);
+		INSERT INTO strategy_states VALUES ('with-state','failed','worker failed',500);
+	`)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := storesqlite.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	withState, err := store.LoadStrategyLifecycle(context.Background(), "with-state")
+	if err != nil || withState.Status != "failed" || withState.Reason != "worker failed" ||
+		!withState.UpdatedAt.Equal(time.UnixMicro(500).UTC()) {
+		t.Fatalf("backfilled lifecycle with state=%+v error=%v", withState, err)
+	}
+	withoutState, err := store.LoadStrategyLifecycle(context.Background(), "without-state")
+	if err != nil || withoutState.Status != "stopped" || withoutState.Reason != "" ||
+		!withoutState.UpdatedAt.Equal(time.UnixMicro(400).UTC()) {
+		t.Fatalf("backfilled lifecycle without state=%+v error=%v", withoutState, err)
+	}
+}
+
 func TestStrategyStateAndSignalsAreAtomicAndVersioned(t *testing.T) {
 	store := openStore(t)
 	signal := registerAndCommitSignal(t, store)
@@ -230,15 +298,15 @@ func TestStrategyStateAndSignalsAreAtomicAndVersioned(t *testing.T) {
 	if err := store.CommitEvent(ctx, storage.StrategyEventCommit{
 		StrategyID: "strategy-1", ExpectedVersion: 0, StateVersion: 1,
 		StatePayload:  json.RawMessage(`{"fast":"10","slow":"20"}`),
-		RuntimeStatus: "running", EventCursor: signal.CausativeCursor,
+		EventCursor:   signal.CausativeCursor,
 		StateChecksum: "state-checksum", Signals: []domain.Signal{signal}, UpdatedAt: fixedTime,
 	}); err != nil {
 		t.Fatalf("exact replay: %v", err)
 	}
 	if err := store.CommitEvent(ctx, storage.StrategyEventCommit{
 		StrategyID: "strategy-1", ExpectedVersion: 0, StateVersion: 1,
-		StatePayload: json.RawMessage(`{"different":true}`), RuntimeStatus: "running",
-		EventCursor: signal.CausativeCursor, StateChecksum: "different", UpdatedAt: fixedTime,
+		StatePayload: json.RawMessage(`{"different":true}`),
+		EventCursor:  signal.CausativeCursor, StateChecksum: "different", UpdatedAt: fixedTime,
 	}); !errors.Is(err, storage.ErrVersionConflict) {
 		t.Fatalf("version conflict error=%v", err)
 	}
@@ -260,12 +328,16 @@ func TestStrategyLifecycleUpdatePreservesSnapshotAndRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.RuntimeStatus != "stopped" || after.StatusReason != "" ||
-		after.Revision != before.Revision || after.StateChecksum != before.StateChecksum ||
+	if after.Revision != before.Revision || after.StateChecksum != before.StateChecksum ||
 		after.EventCursor != before.EventCursor ||
 		string(after.StatePayload) != string(before.StatePayload) ||
-		!after.UpdatedAt.Equal(updatedAt) {
+		!after.UpdatedAt.Equal(before.UpdatedAt) {
 		t.Fatalf("lifecycle update changed snapshot: before=%+v after=%+v", before, after)
+	}
+	lifecycle, err := store.LoadStrategyLifecycle(ctx, signal.StrategyID)
+	if err != nil || lifecycle.Status != "stopped" || lifecycle.Reason != "" ||
+		!lifecycle.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("lifecycle=%+v error=%v", lifecycle, err)
 	}
 }
 
@@ -274,6 +346,31 @@ func TestStrategyLifecycleUpdateRequiresExistingRuntime(t *testing.T) {
 	err := store.SetStrategyStatus(context.Background(), "missing", "stopped", "", fixedTime)
 	if !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestStrategyLifecycleExistsBeforeFirstEvent(t *testing.T) {
+	store := openStore(t)
+	ctx := context.Background()
+	definition := storage.StrategyDefinition{
+		ID: "new-strategy", ExchangeAccountID: "account-1", InstrumentID: "instrument-1",
+		StrategyType: "moving_average_cross", ConfigHash: "config-hash",
+		CreatedAt: fixedTime, UpdatedAt: fixedTime,
+	}
+	if err := store.RegisterStrategy(ctx, definition); err != nil {
+		t.Fatal(err)
+	}
+	updatedAt := fixedTime.Add(time.Minute)
+	if err := store.SetStrategyStatus(ctx, definition.ID, "reconciling", "startup", updatedAt); err != nil {
+		t.Fatalf("set lifecycle before first event: %v", err)
+	}
+	lifecycle, err := store.LoadStrategyLifecycle(ctx, definition.ID)
+	if err != nil || lifecycle.Status != "reconciling" || lifecycle.Reason != "startup" ||
+		!lifecycle.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("lifecycle = %+v, error = %v", lifecycle, err)
+	}
+	if _, err := store.LoadRuntime(ctx, definition.ID); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("event state before first event error = %v, want not found", err)
 	}
 }
 

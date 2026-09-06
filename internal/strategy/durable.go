@@ -79,7 +79,7 @@ func (p *DurableStatePort) Commit(
 		StrategyID: id, ExpectedVersion: revision,
 		StateVersion:  snapshot.State.Version,
 		StatePayload:  append(json.RawMessage(nil), snapshot.State.Payload...),
-		RuntimeStatus: "running", EventCursor: *snapshot.LastCursor,
+		EventCursor: *snapshot.LastCursor,
 		StateChecksum: hex.EncodeToString(checksum[:]), Signals: signals,
 		UpdatedAt: snapshot.LastCursor.Timestamp.UTC(),
 	})

@@ -12,7 +12,7 @@ import (
 	migrationfs "github.com/damirm/lazytrade/db/sqlite/migrations"
 )
 
-const currentSchemaVersion = 5
+const currentSchemaVersion = 6
 
 func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (

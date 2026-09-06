@@ -71,6 +71,12 @@ worker/risk gate, невалидную subscription и несовпадение 
 binding и subscription. Routing maps выводятся из этого списка и не являются
 отдельной конфигурацией.
 
+Lifecycle хранится в отдельной строке `strategy_lifecycle`, создаваемой вместе
+со strategy instance. Он не зависит от наличия event snapshot в
+`strategy_states`, поэтому `reconciling`, `running` и terminal status должны
+сохраняться даже до первого market event. `ErrNotFound` при lifecycle update
+считается нарушением storage-инварианта и не подавляется.
+
 Порядок важен и не должен упрощаться без доказательства безопасности:
 
 1. Persist strategy lifecycle `reconciling`.

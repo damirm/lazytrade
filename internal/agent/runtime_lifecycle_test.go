@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -11,12 +12,89 @@ import (
 	"github.com/damirm/lazytrade/internal/domain"
 	"github.com/damirm/lazytrade/internal/exchange"
 	"github.com/damirm/lazytrade/internal/exchange/fake"
+	"github.com/damirm/lazytrade/internal/storage"
+	"github.com/damirm/lazytrade/internal/storage/sqlite"
+	"github.com/damirm/lazytrade/internal/strategy"
+	"github.com/damirm/lazytrade/internal/strategy/movingaverage"
+	"github.com/shopspring/decimal"
 )
 
 type lifecycleUpdate struct {
 	strategyID domain.StrategyID
 	status     string
 	reason     string
+}
+
+func TestRuntimePersistsLifecycleBeforeFirstMarketEvent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "lifecycle.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	started := time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC)
+	definition := storage.StrategyDefinition{
+		ID: "ma", ExchangeAccountID: "fake", InstrumentID: "TEST",
+		StrategyType: movingaverage.Type, ConfigHash: "lifecycle-test",
+		CreatedAt: started, UpdatedAt: started,
+	}
+	if err := store.RegisterStrategy(ctx, definition); err != nil {
+		t.Fatal(err)
+	}
+	implementation, err := movingaverage.New(movingaverage.Config{
+		FastPeriod: 1, SlowPeriod: 2, Interval: time.Minute,
+		Quantity: domain.Quantity{Value: decimal.NewFromInt(1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := NewPersistentStatePort(store, movingaverage.Type)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := strategy.NewWorker("ma", "fake", "TEST", implementation, port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	subscription := exchange.Subscription{
+		InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+	}
+	ready := make(chan struct{}, 1)
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- (Runtime{
+			Exchange: adapter,
+			Strategies: singleTestStrategy(
+				worker, &recordingRisk{decision: RiskDecision{Allowed: true}}, subscription, nil,
+			),
+			Intents: store, Lifecycle: store, Ready: ready,
+		}).Run(runCtx)
+	}()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("runtime stopped before ready: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("runtime did not become ready")
+	}
+	lifecycle, err := store.LoadStrategyLifecycle(ctx, "ma")
+	if err != nil || lifecycle.Status != RuntimeStatusRunning {
+		t.Fatalf("running lifecycle=%+v error=%v", lifecycle, err)
+	}
+	if _, err := store.LoadRuntime(ctx, "ma"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("strategy state before first market event error=%v, want not found", err)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error=%v", err)
+	}
+	lifecycle, err = store.LoadStrategyLifecycle(ctx, "ma")
+	if err != nil || lifecycle.Status != RuntimeStatusStopped {
+		t.Fatalf("stopped lifecycle=%+v error=%v", lifecycle, err)
+	}
 }
 
 type lifecycleSpy struct {

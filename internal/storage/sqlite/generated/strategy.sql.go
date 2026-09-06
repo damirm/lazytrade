@@ -10,23 +10,50 @@ import (
 	"database/sql"
 )
 
-const getStrategyRuntime = `-- name: GetStrategyRuntime :one
-SELECT strategy_id, state_version, state_payload, revision, runtime_status,
-       status_reason, event_timestamp, event_priority, event_sequence,
-       state_checksum, updated_at
-FROM strategy_states WHERE strategy_id = ?
+const getStrategyLifecycle = `-- name: GetStrategyLifecycle :one
+SELECT strategy_id, runtime_status, status_reason, updated_at
+FROM strategy_lifecycle WHERE strategy_id = ?
 `
 
-func (q *Queries) GetStrategyRuntime(ctx context.Context, strategyID string) (StrategyState, error) {
+func (q *Queries) GetStrategyLifecycle(ctx context.Context, strategyID string) (StrategyLifecycle, error) {
+	row := q.db.QueryRowContext(ctx, getStrategyLifecycle, strategyID)
+	var i StrategyLifecycle
+	err := row.Scan(
+		&i.StrategyID,
+		&i.RuntimeStatus,
+		&i.StatusReason,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStrategyRuntime = `-- name: GetStrategyRuntime :one
+SELECT strategy_id, state_version, state_payload, revision,
+       event_timestamp, event_priority, event_sequence,
+       states.state_checksum, states.updated_at
+FROM strategy_states AS states WHERE strategy_id = ?
+`
+
+type GetStrategyRuntimeRow struct {
+	StrategyID     string `json:"strategy_id"`
+	StateVersion   int64  `json:"state_version"`
+	StatePayload   string `json:"state_payload"`
+	Revision       int64  `json:"revision"`
+	EventTimestamp int64  `json:"event_timestamp"`
+	EventPriority  int64  `json:"event_priority"`
+	EventSequence  int64  `json:"event_sequence"`
+	StateChecksum  string `json:"state_checksum"`
+	UpdatedAt      int64  `json:"updated_at"`
+}
+
+func (q *Queries) GetStrategyRuntime(ctx context.Context, strategyID string) (GetStrategyRuntimeRow, error) {
 	row := q.db.QueryRowContext(ctx, getStrategyRuntime, strategyID)
-	var i StrategyState
+	var i GetStrategyRuntimeRow
 	err := row.Scan(
 		&i.StrategyID,
 		&i.StateVersion,
 		&i.StatePayload,
 		&i.Revision,
-		&i.RuntimeStatus,
-		&i.StatusReason,
 		&i.EventTimestamp,
 		&i.EventPriority,
 		&i.EventSequence,
@@ -116,19 +143,33 @@ func (q *Queries) InsertStrategyInstance(ctx context.Context, arg InsertStrategy
 	return err
 }
 
+const insertStrategyLifecycle = `-- name: InsertStrategyLifecycle :exec
+INSERT INTO strategy_lifecycle
+    (strategy_id, runtime_status, status_reason, updated_at)
+VALUES (?, 'stopped', '', ?)
+`
+
+type InsertStrategyLifecycleParams struct {
+	StrategyID string `json:"strategy_id"`
+	UpdatedAt  int64  `json:"updated_at"`
+}
+
+func (q *Queries) InsertStrategyLifecycle(ctx context.Context, arg InsertStrategyLifecycleParams) error {
+	_, err := q.db.ExecContext(ctx, insertStrategyLifecycle, arg.StrategyID, arg.UpdatedAt)
+	return err
+}
+
 const insertStrategyRuntime = `-- name: InsertStrategyRuntime :exec
 INSERT INTO strategy_states
     (strategy_id, state_version, state_payload, revision, runtime_status,
      status_reason, event_timestamp, event_priority, event_sequence, state_checksum, updated_at)
-VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, 1, 'state', '', ?, ?, ?, ?, ?)
 `
 
 type InsertStrategyRuntimeParams struct {
 	StrategyID     string `json:"strategy_id"`
 	StateVersion   int64  `json:"state_version"`
 	StatePayload   string `json:"state_payload"`
-	RuntimeStatus  string `json:"runtime_status"`
-	StatusReason   string `json:"status_reason"`
 	EventTimestamp int64  `json:"event_timestamp"`
 	EventPriority  int64  `json:"event_priority"`
 	EventSequence  int64  `json:"event_sequence"`
@@ -141,8 +182,6 @@ func (q *Queries) InsertStrategyRuntime(ctx context.Context, arg InsertStrategyR
 		arg.StrategyID,
 		arg.StateVersion,
 		arg.StatePayload,
-		arg.RuntimeStatus,
-		arg.StatusReason,
 		arg.EventTimestamp,
 		arg.EventPriority,
 		arg.EventSequence,
@@ -153,7 +192,7 @@ func (q *Queries) InsertStrategyRuntime(ctx context.Context, arg InsertStrategyR
 }
 
 const updateStrategyLifecycle = `-- name: UpdateStrategyLifecycle :execrows
-UPDATE strategy_states
+UPDATE strategy_lifecycle
 SET runtime_status=?, status_reason=?, updated_at=?
 WHERE strategy_id=?
 `
@@ -180,8 +219,8 @@ func (q *Queries) UpdateStrategyLifecycle(ctx context.Context, arg UpdateStrateg
 
 const updateStrategyRuntime = `-- name: UpdateStrategyRuntime :execrows
 UPDATE strategy_states
-SET state_version=?, state_payload=?, revision=revision+1, runtime_status=?,
-    status_reason=?, event_timestamp=?, event_priority=?, event_sequence=?,
+SET state_version=?, state_payload=?, revision=revision+1,
+    event_timestamp=?, event_priority=?, event_sequence=?,
     state_checksum=?, updated_at=?
 WHERE strategy_id=? AND revision=?
 `
@@ -189,8 +228,6 @@ WHERE strategy_id=? AND revision=?
 type UpdateStrategyRuntimeParams struct {
 	StateVersion   int64  `json:"state_version"`
 	StatePayload   string `json:"state_payload"`
-	RuntimeStatus  string `json:"runtime_status"`
-	StatusReason   string `json:"status_reason"`
 	EventTimestamp int64  `json:"event_timestamp"`
 	EventPriority  int64  `json:"event_priority"`
 	EventSequence  int64  `json:"event_sequence"`
@@ -204,8 +241,6 @@ func (q *Queries) UpdateStrategyRuntime(ctx context.Context, arg UpdateStrategyR
 	result, err := q.db.ExecContext(ctx, updateStrategyRuntime,
 		arg.StateVersion,
 		arg.StatePayload,
-		arg.RuntimeStatus,
-		arg.StatusReason,
 		arg.EventTimestamp,
 		arg.EventPriority,
 		arg.EventSequence,

@@ -1266,6 +1266,7 @@ sqlc-типы не должны выходить за пределы storage ada
 
 - `strategy_instances`;
 - `strategy_states`;
+- `strategy_lifecycle`;
 - `order_intents`;
 - `orders`;
 - `order_executions`;
@@ -1789,6 +1790,11 @@ backtest:
 - `strategy_id`;
 - `state_version`;
 - `state_payload`;
+- `updated_at`.
+
+### `strategy_lifecycle`
+
+- `strategy_id`;
 - `runtime_status`;
 - `status_reason`;
 - `updated_at`.

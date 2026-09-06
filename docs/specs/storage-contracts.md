@@ -609,6 +609,7 @@ cleanup/repair командой. Если файл не закрыт, его н�
 |---|---|---|
 | `strategy_instances` | application `strategy_id` | при MVP `(exchange_account_id, instrument_id)` для торгующих instances |
 | `strategy_states` | `strategy_id` | `(strategy_id, revision)` через history либо current row revision |
+| `strategy_lifecycle` | `strategy_id` | одна текущая lifecycle-строка на instance |
 | `signals` | `signal_id` | `(strategy_id, causative cursor, ordinal)` |
 | `risk_decisions` | application ID или `signal_id` | `signal_id` |
 | `order_intents` | application `intent_id` | `signal_id`, `client_order_id` |

@@ -212,6 +212,13 @@ type StrategyInstance struct {
 	UpdatedAt         int64  `json:"updated_at"`
 }
 
+type StrategyLifecycle struct {
+	StrategyID    string `json:"strategy_id"`
+	RuntimeStatus string `json:"runtime_status"`
+	StatusReason  string `json:"status_reason"`
+	UpdatedAt     int64  `json:"updated_at"`
+}
+
 type StrategyState struct {
 	StrategyID     string `json:"strategy_id"`
 	StateVersion   int64  `json:"state_version"`

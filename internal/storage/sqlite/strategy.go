@@ -27,14 +27,29 @@ func (s *Store) RegisterStrategy(ctx context.Context, definition storage.Strateg
 	if err != nil {
 		return err
 	}
-	err = s.queries.InsertStrategyInstance(ctx, generated.InsertStrategyInstanceParams{
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("sqlite: begin strategy registration: %w", err)
+	}
+	q := generated.New(tx)
+	err = q.InsertStrategyInstance(ctx, generated.InsertStrategyInstanceParams{
 		ID: string(definition.ID), ExchangeAccountID: string(definition.ExchangeAccountID),
 		InstrumentID: string(definition.InstrumentID), StrategyType: definition.StrategyType,
 		ConfigHash: definition.ConfigHash, CreatedAt: created, UpdatedAt: updated,
 	})
 	if err == nil {
+		if err := q.InsertStrategyLifecycle(ctx, generated.InsertStrategyLifecycleParams{
+			StrategyID: string(definition.ID), UpdatedAt: updated,
+		}); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("sqlite: insert strategy lifecycle %s: %w", definition.ID, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("sqlite: commit strategy registration: %w", err)
+		}
 		return nil
 	}
+	_ = tx.Rollback()
 	var account, instrument, strategyType, configHash string
 	scanErr := s.db.QueryRowContext(ctx, `SELECT exchange_account_id, instrument_id, strategy_type, config_hash
 		FROM strategy_instances WHERE id=?`, definition.ID).
@@ -42,6 +57,9 @@ func (s *Store) RegisterStrategy(ctx context.Context, definition storage.Strateg
 	if scanErr == nil && account == string(definition.ExchangeAccountID) &&
 		instrument == string(definition.InstrumentID) && strategyType == definition.StrategyType &&
 		configHash == definition.ConfigHash {
+		if _, err := s.LoadStrategyLifecycle(ctx, definition.ID); err != nil {
+			return fmt.Errorf("sqlite: verify strategy %s lifecycle: %w", definition.ID, err)
+		}
 		return nil
 	}
 	if scanErr == nil {
@@ -57,7 +75,7 @@ func (s *Store) SetStrategyStatus(
 	reason string,
 	updatedAt time.Time,
 ) error {
-	if strategyID.Validate() != nil || status == "" {
+	if strategyID.Validate() != nil || !validLifecycleStatus(status) {
 		return errors.New("sqlite: invalid strategy lifecycle update")
 	}
 	updated, err := micros(updatedAt)
@@ -93,16 +111,35 @@ func (s *Store) LoadRuntime(ctx context.Context, id domain.StrategyID) (storage.
 	return storage.StrategyRuntime{
 		StrategyID: domain.StrategyID(row.StrategyID), StateVersion: uint32(row.StateVersion),
 		StatePayload: json.RawMessage(row.StatePayload), Revision: uint64(row.Revision),
-		RuntimeStatus: row.RuntimeStatus, StatusReason: row.StatusReason,
 		EventCursor: domain.EventCursor{Timestamp: fromMicros(row.EventTimestamp),
 			Priority: uint16(row.EventPriority), Sequence: uint64(row.EventSequence)},
 		StateChecksum: row.StateChecksum, UpdatedAt: fromMicros(row.UpdatedAt),
 	}, nil
 }
 
+func (s *Store) LoadStrategyLifecycle(
+	ctx context.Context,
+	strategyID domain.StrategyID,
+) (storage.StrategyLifecycle, error) {
+	if err := strategyID.Validate(); err != nil {
+		return storage.StrategyLifecycle{}, fmt.Errorf("sqlite: strategy lifecycle ID: %w", err)
+	}
+	row, err := s.queries.GetStrategyLifecycle(ctx, string(strategyID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return storage.StrategyLifecycle{}, fmt.Errorf("strategy lifecycle %s: %w", strategyID, storage.ErrNotFound)
+	}
+	if err != nil {
+		return storage.StrategyLifecycle{}, fmt.Errorf("sqlite: load strategy lifecycle %s: %w", strategyID, err)
+	}
+	return storage.StrategyLifecycle{
+		StrategyID: domain.StrategyID(row.StrategyID), Status: row.RuntimeStatus,
+		Reason: row.StatusReason, UpdatedAt: fromMicros(row.UpdatedAt),
+	}, nil
+}
+
 func (s *Store) CommitEvent(ctx context.Context, commit storage.StrategyEventCommit) error {
 	if commit.StrategyID.Validate() != nil || commit.StateVersion == 0 ||
-		!json.Valid(commit.StatePayload) || commit.RuntimeStatus == "" || commit.StateChecksum == "" {
+		!json.Valid(commit.StatePayload) || commit.StateChecksum == "" {
 		return errors.New("sqlite: invalid strategy event commit")
 	}
 	updated, err := micros(commit.UpdatedAt)
@@ -142,7 +179,6 @@ func (s *Store) CommitEvent(ctx context.Context, commit storage.StrategyEventCom
 		}
 		rows, err := q.UpdateStrategyRuntime(ctx, generated.UpdateStrategyRuntimeParams{
 			StateVersion: int64(commit.StateVersion), StatePayload: string(commit.StatePayload),
-			RuntimeStatus: commit.RuntimeStatus, StatusReason: commit.StatusReason,
 			EventTimestamp: cursorTime, EventPriority: int64(commit.EventCursor.Priority),
 			EventSequence: int64(commit.EventCursor.Sequence), StateChecksum: commit.StateChecksum,
 			UpdatedAt: updated, StrategyID: string(commit.StrategyID), Revision: int64(commit.ExpectedVersion),
@@ -159,8 +195,7 @@ func (s *Store) CommitEvent(ctx context.Context, commit storage.StrategyEventCom
 		}
 		if err := q.InsertStrategyRuntime(ctx, generated.InsertStrategyRuntimeParams{
 			StrategyID: string(commit.StrategyID), StateVersion: int64(commit.StateVersion),
-			StatePayload: string(commit.StatePayload), RuntimeStatus: commit.RuntimeStatus,
-			StatusReason: commit.StatusReason, EventTimestamp: cursorTime,
+			StatePayload: string(commit.StatePayload), EventTimestamp: cursorTime,
 			EventPriority: int64(commit.EventCursor.Priority), EventSequence: int64(commit.EventCursor.Sequence),
 			StateChecksum: commit.StateChecksum, UpdatedAt: updated,
 		}); err != nil {
@@ -179,6 +214,15 @@ func (s *Store) CommitEvent(ctx context.Context, commit storage.StrategyEventCom
 		return fmt.Errorf("sqlite: commit strategy event: %w", err)
 	}
 	return nil
+}
+
+func validLifecycleStatus(status string) bool {
+	switch status {
+	case "reconciling", "running", "stopped", "failed", "blocked":
+		return true
+	default:
+		return false
+	}
 }
 
 func insertSignal(ctx context.Context, q *generated.Queries, signal domain.Signal) error {

@@ -87,16 +87,20 @@ infrastructure adapters:
 
 ## Основные данные SQLite
 
-- `strategy_instances`, `strategy_states`, `signals`;
+- `strategy_instances`, `strategy_states`, `strategy_lifecycle`, `signals`;
 - `risk_decisions`, `order_intents`, `orders`;
 - `execution_inbox`, `order_executions`, `order_commissions`;
 - `positions`, `equity_snapshots`, `pnl_events`, `daily_statistics`;
 - `control_states`, `audit_events`;
 - `backtest_runs`, `backtest_artifacts`.
 
-Текущая schema version — 5. Execution inbox является durable ingress, а не
+Текущая schema version — 6. Execution inbox является durable ingress, а не
 временной очередью в памяти. Cumulative commission хранится отдельно, чтобы
 применять только положительную дельту и не задваивать комиссию.
+
+Lifecycle стратегии хранится отдельно от event-state. Строка lifecycle
+создаётся атомарно при регистрации instance, поэтому startup status наблюдаем
+до первого market event. Детали: [ADR-0005](adr/0005-separate-strategy-lifecycle.md).
 
 ## Будущие изменения, требующие отдельного решения
 
