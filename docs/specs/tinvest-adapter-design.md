@@ -285,6 +285,25 @@ ID конкретным unary методом не подтверждён кон�
 
 ## 7. Stream lifecycle и reconnect
 
+### Текущий sandbox MVP (R7)
+
+Market/execution streams одноразовые. `SubscribeMarketData` синхронно получает
+metadata, открывает RPC и отправляет subscriptions; ошибки этих шагов
+возвращаются напрямую. Receive loop публикует data или одну terminal error
+(включая неожиданный EOF), затем закрывает оба канала и отменяет RPC context.
+Отмена caller context завершает поток без terminal error. `State`, поколения,
+stream backoff и reconnect удалены. Runtime блокируется до restart/recovery.
+
+Open/send не доказывает broker ACK. Старый `StreamHealthy` также публиковался
+до первого `Recv`; полное подтверждение market subscriptions пока не
+реализовано. Preflight проверяет открытие и уже доступные ошибки, а не доставку
+котировок. Read-only unary retries остаются независимыми от stream lifecycle.
+
+### Отложенный reconnect, не текущий контракт
+
+Следующий алгоритм допустим только после отдельной реализации degraded state,
+запрета новых сигналов во время разрыва и recovery/soak tests.
+
 Adapter хранит desired subscription set отдельно от конкретного gRPC stream.
 
 Алгоритм:
@@ -465,7 +484,8 @@ Runtime capability дополнительно пересекается с instru
 - instrument mapper для каждого включённого типа;
 - exhaustive enum mapping с safe unknown;
 - error classifier по gRPC status и API catalog;
-- deterministic fake stream: disconnect, ack rejection, reconnect/resubscribe;
+- deterministic fake stream: terminal disconnect/EOF, cancellation и blocked
+  consumer; ack validation и reconnect/resubscribe — отложенные проверки;
 - bounded queue overflow отдельно для market snapshot и execution;
 - duplicate/partial fill normalization;
 - transport contract tests без сети;
@@ -486,7 +506,7 @@ Runtime capability дополнительно пересекается с instru
 - UID является основным instrument ID;
 - UUID client order ID сохраняется до вызова и коррелирует stream;
 - unknown order outcome не retry внутри adapter;
-- desired subscriptions восстанавливаются после reconnect;
+- текущие streams fail closed без reconnect; resubscribe — отложенное требование;
 - операции не считаются стабильным источником trade ID;
 - decimal mapping выполняется непосредственно из units/nanos.
 

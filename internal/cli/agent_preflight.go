@@ -199,7 +199,7 @@ func runAgentPreflight(ctx context.Context, configPath string, cfg appconfig.Con
 		stopExecutions()
 		return report, fmt.Errorf("preflight market stream: %w", err)
 	}
-	if err := waitForHealthyStreams(ctx, marketStream, executionStream); err != nil {
+	if err := checkOpenedStreams(ctx, marketStream, executionStream); err != nil {
 		stopMarket()
 		stopExecutions()
 		return report, err
@@ -239,26 +239,26 @@ func validateWholeLots(quantity, lotSize domain.Quantity) error {
 	return nil
 }
 
-func waitForHealthyStreams(ctx context.Context, market exchange.MarketStream, executions exchange.ExecutionStream) error {
-	for {
+// Subscribe calls have already opened the transports and sent subscriptions.
+// This checks immediately available failures, not broker ACKs or market activity.
+func checkOpenedStreams(ctx context.Context, market exchange.MarketStream, executions exchange.ExecutionStream) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("preflight streams: %w", err)
+	}
+	for _, stream := range []struct {
+		name   string
+		errors <-chan error
+	}{{"market", market.Errors}, {"execution", executions.Errors}} {
 		select {
-		case <-ctx.Done():
-			return fmt.Errorf("preflight streams: %w", ctx.Err())
-		case err, ok := <-market.Errors:
-			if ok && err != nil {
-				return fmt.Errorf("preflight market stream: %w", err)
-			}
-		case err, ok := <-executions.Errors:
-			if ok && err != nil {
-				return fmt.Errorf("preflight execution stream: %w", err)
-			}
-		case state, ok := <-market.State:
+		case err, ok := <-stream.errors:
 			if !ok {
-				return errors.New("preflight market stream closed before becoming healthy")
+				return fmt.Errorf("preflight %s stream closed", stream.name)
 			}
-			if state.State == exchange.StreamHealthy {
-				return nil
+			if err != nil {
+				return fmt.Errorf("preflight %s stream: %w", stream.name, err)
 			}
+		default:
 		}
 	}
+	return nil
 }

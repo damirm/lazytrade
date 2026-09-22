@@ -62,6 +62,12 @@ data download --config <file> --exchange <id> --instrument <id> ...
 `--confirm` и должен выполняться минимальным количеством во время открытого
 рынка.
 
+`agent preflight` проверяет успешное открытие market/execution RPC и отправку
+market subscriptions, а также уже поступившие ошибки. Он не ждёт первой свечи
+или market subscription ACK; успешный preflight не доказывает доставку данных.
+При закрытом рынке отсутствие свечей само по себе не считается ошибкой этой
+проверки.
+
 ## History recovery
 
 - Источник — `GetSandboxOperationsByCursor`, затем bridge operation ID в
@@ -93,6 +99,6 @@ data download --config <file> --exchange <id> --instrument <id> ...
 - Read-only unary calls: максимум 3 попытки для transient/rate-limit.
 - Execution-stream enrichment через GetOrderState: максимум 2 попытки, чтобы
   не блокировать receiver надолго.
-- Stream reconnect не оборачивается в unary retry helper.
+- Streams одноразовые, без reconnect: terminal error или неожиданный EOF
+  блокирует runtime. После устранения причины нужен restart с recovery.
 - Mutations всегда one-shot; unknown outcome разрешается lookup/reconciliation.
-

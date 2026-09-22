@@ -208,17 +208,49 @@ milestone не считается закрытым локальными тест
 
 ### R7. Один контракт stream supervision
 
+Статус: реализовано 22 сентября 2026 года.
+
 Проблема: T-Invest adapter реализует reconnect, но runtime завершает работу при
 первой stream error, поэтому reconnect фактически недостижим.
 
 Текущее решение для sandbox MVP: одноразовый fail-closed stream. Adapter
 возвращает terminal error, runtime блокируется и требует recovery/restart.
 
-Работы:
+Реализация:
 
-1. Зафиксировать текущее fail-closed поведение тестами.
-2. Удалить внутренний reconnect/backoff и поколения соединения.
-3. Упростить stream state model до событий и terminal error.
+1. `MarketStream` содержит только events и terminal errors. Удалены `State`,
+   `StreamEvent`, enum состояний, поколения и stream reconnect/backoff.
+2. `SubscribeMarketData` синхронно выполняет metadata/open/send; ошибки setup
+   возвращаются напрямую. Receive error/EOF публикуется один раз, закрывает
+   оба канала и отменяет дочерний RPC context. Execution stream использует ту
+   же one-shot семантику. Отмена caller — штатный выход без terminal error.
+3. Runtime блокирует все активные стратегии при ошибке или неожиданном закрытии
+   market/execution stream. При одновременном закрытии market data и buffered
+   terminal error сохраняется конкретная причина, а не общий текст EOF.
+4. Fake `Disconnect` завершает оба вида подписок без reconnect; дочерние
+   lifetime освобождают cleanup goroutines даже с `context.Background()`.
+5. Preflight проверяет успешное open/send и уже доступные ошибки. Старый
+   `healthy` не подтверждал broker ACK: он отправлялся до первого `Recv`.
+   Полная проверка market subscription ACK и доставки данных не выдаётся за
+   реализованную. Подробности в
+   [`trading-runtime.md`](../architecture/trading-runtime.md).
+
+Регрессионные проверки: synchronous open/send failure, terminal receive error
+и EOF без второго открытия RPC, обычная cancellation и полный event buffer
+без читающего consumer, mapped market event, multi-strategy blocked lifecycle,
+закрытие error/data channels, доступные preflight errors и освобождение fake
+подписок без отмены родителя. Замечания независимого ревью по cleanup fake и
+качеству full-buffer теста исправлены и повторно проверены.
+
+Пройдены `go test -count=1 -timeout 60s ./...`, `go vet ./...`, `go build ./...`
+и `go test -race -count=1 -timeout 90s` для agent, SQLite, exchange и CLI.
+Целевые cleanup/full-buffer тесты дополнительно прошли 20 повторов с race
+detector. Реальный sandbox API не вызывался; основной round-trip milestone
+остаётся открытым. Следующий пункт рефакторинга — R8.
+
+Отложенное дополнительное покрытие: отдельные lifecycle tests для mapper
+failure → RPC cancellation и cancellation заблокированного `Send`. Это не
+меняет следующий пункт roadmap.
 
 Полноценный reconnect можно вернуть отдельным решением только вместе с
 `degraded` state, запретом новых сигналов во время разрыва и soak tests.

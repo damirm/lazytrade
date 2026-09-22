@@ -37,7 +37,8 @@ scripts/
 - выявить непокрытые acceptance criteria;
 - запустить unit/integration/race tests;
 - реализовать crash-point tests;
-- реализовать reconnect scenarios;
+- проверять fail closed и restart/recovery при обрыве streams; reconnect
+  scenarios добавлять после отдельной реализации degraded/recovery протокола;
 - провести sandbox smoke и soak tests;
 - проверить bounded memory/queues;
 - проверить graceful shutdown;

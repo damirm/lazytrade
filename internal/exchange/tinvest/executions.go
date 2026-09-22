@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/damirm/lazytrade/internal/domain"
 	"github.com/damirm/lazytrade/internal/exchange"
@@ -33,41 +32,40 @@ func (a *Adapter) SubscribeExecutions(ctx context.Context, accountID domain.Exch
 	if a.orderStream == nil {
 		return exchange.ExecutionStream{}, errors.New("T-Invest order stream is not configured")
 	}
-	receiver, err := a.orderStream.OpenTrades(ctx, &pb.TradesStreamRequest{Accounts: []string{a.accountID}})
+	streamCtx, cancel := context.WithCancel(ctx)
+	receiver, err := a.orderStream.OpenTrades(streamCtx, &pb.TradesStreamRequest{Accounts: []string{a.accountID}})
 	if err != nil {
+		cancel()
 		return exchange.ExecutionStream{}, mapError("subscribe executions", err)
 	}
 	executions := make(chan exchange.Execution, 32)
 	streamErrors := make(chan error, 1)
-	go a.receiveExecutions(ctx, receiver, executions, streamErrors)
+	go a.receiveExecutions(ctx, streamCtx, cancel, receiver, executions, streamErrors)
 	return exchange.ExecutionStream{Executions: executions, Errors: streamErrors}, nil
 }
 
 func (a *Adapter) receiveExecutions(
-	ctx context.Context,
+	parentCtx, streamCtx context.Context,
+	cancel context.CancelFunc,
 	receiver tradesReceiver,
 	executions chan<- exchange.Execution,
 	streamErrors chan<- error,
 ) {
 	defer close(executions)
 	defer close(streamErrors)
+	defer cancel()
 	for {
 		response, err := receiver.Recv()
 		if err != nil {
-			if errors.Is(err, io.EOF) || ctx.Err() != nil {
-				return
-			}
-			select {
-			case streamErrors <- mapError("receive execution", err):
-			case <-ctx.Done():
+			if parentCtx.Err() == nil {
+				streamErrors <- mapError("receive execution", err)
 			}
 			return
 		}
 		if subscription := response.GetSubscription(); subscription != nil {
 			if err := validateTradesSubscription(subscription, a.accountID); err != nil {
-				select {
-				case streamErrors <- err:
-				case <-ctx.Done():
+				if parentCtx.Err() == nil {
+					streamErrors <- err
 				}
 				return
 			}
@@ -77,18 +75,17 @@ func (a *Adapter) receiveExecutions(
 		if trades == nil {
 			continue
 		}
-		mapped, err := a.mapOrderTrades(ctx, trades)
+		mapped, err := a.mapOrderTrades(streamCtx, trades)
 		if err != nil {
-			select {
-			case streamErrors <- err:
-			case <-ctx.Done():
+			if parentCtx.Err() == nil {
+				streamErrors <- err
 			}
 			return
 		}
 		for _, execution := range mapped {
 			select {
 			case executions <- execution:
-			case <-ctx.Done():
+			case <-streamCtx.Done():
 				return
 			}
 		}

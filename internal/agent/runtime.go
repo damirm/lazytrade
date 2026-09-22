@@ -239,15 +239,17 @@ func (r Runtime) Run(ctx context.Context) (resultErr error) {
 			return ctx.Err()
 		}
 	}
-	events, streamErrors, states := stream.Events, stream.Errors, stream.State
+	events, streamErrors := stream.Events, stream.Errors
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case err, ok := <-streamErrors:
 			if !ok {
-				streamErrors = nil
-				continue
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return blockRuntime(errors.New("market data error stream closed"))
 			}
 			if err != nil {
 				return blockRuntime(fmt.Errorf("market data stream: %w", err))
@@ -270,21 +272,19 @@ func (r Runtime) Run(ctx context.Context) (resultErr error) {
 			if err := r.drainPendingExecutionsSynchronized(ctx, accountID, executionStoreMu); err != nil {
 				return fmt.Errorf("apply received executions: %w", err)
 			}
-		case state, ok := <-states:
-			if !ok {
-				states = nil
-				continue
-			}
-			if state.State == exchange.StreamClosed {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				return blockRuntime(errors.New("market data stream closed"))
-			}
 		case event, ok := <-events:
 			if !ok {
 				if err := ctx.Err(); err != nil {
 					return err
+				}
+				// Both channels may become ready together. Preserve a buffered
+				// terminal cause rather than replacing it with a generic EOF.
+				select {
+				case err := <-streamErrors:
+					if err != nil {
+						return blockRuntime(fmt.Errorf("market data stream: %w", err))
+					}
+				default:
 				}
 				return blockRuntime(errors.New("market data stream closed"))
 			}

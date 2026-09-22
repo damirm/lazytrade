@@ -46,6 +46,9 @@ infrastructure adapters:
 
 - `internal/exchange.Exchange` — нормализованный интерфейс.
 - SDK T-Invest остаётся только внутри `internal/exchange/tinvest`.
+- Market/execution streams имеют один lifetime: data и terminal error, без
+  reconnect или поколений соединений. Обрыв требует fail closed и restart с
+  recovery; успешное открытие не является подтверждением broker ACK.
 - Execution stream возвращает `exchange.Execution` без strategy ID. Runtime
   определяет владельца по durable intent/order в storage, проверяет identity и
   только затем создаёт `domain.Execution` для inbox. In-memory order contexts

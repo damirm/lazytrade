@@ -155,56 +155,32 @@ func (a *Adapter) SubscribeMarketData(ctx context.Context, subscriptions []excha
 			return exchange.MarketStream{}, fmt.Errorf("subscription %d: %w", i, err)
 		}
 	}
-	events := make(chan domain.MarketEvent, 128)
-	errs := make(chan error, 8)
-	states := make(chan exchange.StreamEvent, 8)
-	go a.runStream(ctx, subscriptions, events, errs, states)
-	return exchange.MarketStream{Events: events, Errors: errs, State: states}, nil
-}
-
-func (a *Adapter) runStream(ctx context.Context, desired []exchange.Subscription, events chan<- domain.MarketEvent, errs chan<- error, states chan<- exchange.StreamEvent) {
-	defer close(events)
-	defer close(errs)
-	defer close(states)
-	var generation uint64
-	assets, err := a.subscriptionAssets(ctx, desired)
+	streamCtx, cancel := context.WithCancel(ctx)
+	assets, err := a.subscriptionAssets(streamCtx, subscriptions)
 	if err != nil {
-		errs <- err
-		states <- exchange.StreamEvent{State: exchange.StreamClosed}
-		return
+		cancel()
+		return exchange.MarketStream{}, fmt.Errorf("resolve subscription assets: %w", err)
 	}
-	for attempt := uint(0); ; attempt++ {
-		if ctx.Err() != nil {
-			states <- exchange.StreamEvent{State: exchange.StreamClosed, Generation: generation}
-			return
-		}
-		generation++
-		states <- exchange.StreamEvent{State: exchange.StreamConnecting, Generation: generation, Subscriptions: desired}
-		stream, err := a.marketStream.MarketDataStream(ctx)
-		if err == nil {
-			err = sendSubscriptions(stream, desired)
-		}
-		if err == nil {
-			states <- exchange.StreamEvent{State: exchange.StreamHealthy, Generation: generation, Subscriptions: desired}
-			err = a.receive(ctx, stream, assets, events)
-		}
-		if ctx.Err() != nil {
-			states <- exchange.StreamEvent{State: exchange.StreamClosed, Generation: generation}
-			return
-		}
-		select {
-		case errs <- mapError("market data stream", err):
-		default:
-		}
-		states <- exchange.StreamEvent{State: exchange.StreamDisconnected, Generation: generation, Subscriptions: desired}
-		timer := time.NewTimer(backoff(attempt))
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-			continue
-		}
+	stream, err := a.marketStream.MarketDataStream(streamCtx)
+	if err != nil {
+		cancel()
+		return exchange.MarketStream{}, mapError("open market data stream", err)
 	}
+	if err := sendSubscriptions(stream, subscriptions); err != nil {
+		cancel()
+		return exchange.MarketStream{}, mapError("subscribe market data", err)
+	}
+	events := make(chan domain.MarketEvent, 128)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(events)
+		defer close(errs)
+		defer cancel()
+		if err := a.receive(streamCtx, stream, assets, events); err != nil && ctx.Err() == nil {
+			errs <- mapError("receive market data", err)
+		}
+	}()
+	return exchange.MarketStream{Events: events, Errors: errs}, nil
 }
 
 func (a *Adapter) subscriptionAssets(ctx context.Context, desired []exchange.Subscription) (map[domain.InstrumentID]string, error) {
@@ -361,16 +337,6 @@ func streamCandleInterval(interval pb.SubscriptionInterval) (time.Duration, erro
 	}
 }
 
-func backoff(attempt uint) time.Duration {
-	d := 250 * time.Millisecond
-	for i := uint(0); i < attempt && d < 30*time.Second; i++ {
-		d *= 2
-	}
-	if d > 30*time.Second {
-		return 30 * time.Second
-	}
-	return d
-}
 func subscriptionInterval(d time.Duration) (pb.SubscriptionInterval, error) {
 	switch d {
 	case time.Minute:

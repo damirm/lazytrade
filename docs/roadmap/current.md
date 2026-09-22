@@ -16,6 +16,8 @@ T-Invest sandbox. Production trading намеренно выключен.
   `opensource.tbank.ru/invest/invest-go`.
 - T-Invest instruments, portfolio, candles, prices, order book, trades,
   trading status, orders и execution stream.
+- One-shot market/execution streams: terminal error/EOF блокирует runtime до
+  restart/recovery; внутреннего reconnect и поколений соединения нет.
 - Несколько стратегий в одном процессе на одном exchange account, при условии
   что каждой принадлежит отдельный инструмент.
 - Стратегии `moving_average_cross` и ограниченная DCA

@@ -70,8 +70,8 @@ testdata/exchange/
 - реализовать T-Invest client lifecycle;
 - получать instrument metadata и portfolio;
 - получать candles, trades и order book;
-- восстанавливать subscriptions после reconnect;
-- реализовать bounded backoff с jitter;
+- поддерживать one-shot streams с terminal error/EOF и отменой RPC context;
+- не добавлять stream reconnect/backoff без отдельного degraded/recovery решения;
 - реализовать sandbox Place/Cancel/Get/OpenOrders;
 - передавать partial fills и duplicate events в воспроизводимом виде;
 - обеспечить stable client order ID, если API это поддерживает;
@@ -99,7 +99,7 @@ Fake обязан поддерживать сценарии:
 - transient error;
 - rate limit;
 - unknown outcome;
-- disconnect/reconnect;
+- terminal disconnect без reconnect;
 - неизвестная позиция для reconciliation.
 
 Сценарии должны управляться тестом детерминированно, без sleep.
@@ -119,7 +119,7 @@ agent предоставляет необходимые операции и кл
 - tick/lot rounding;
 - error classification;
 - capabilities;
-- reconnect и восстановление subscriptions;
+- terminal error/EOF, отсутствие reconnect и graceful cancellation;
 - bounded queue policy;
 - duplicate/partial fills fake;
 - contract tests adapter;
@@ -153,6 +153,6 @@ agent предоставляет необходимые операции и кл
 - поддержанные T-Invest методы;
 - capability matrix;
 - mapping ошибок;
-- reconnect policy;
+- one-shot stream policy и ограничения проверки subscription ACK;
 - известные ограничения sandbox;
 - команды запуска optional integration tests.

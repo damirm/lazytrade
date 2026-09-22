@@ -44,7 +44,6 @@ type Exchange struct {
 	marketSubscribers    map[uint64]*marketSubscriber
 	executionSubscribers map[uint64]*executionSubscriber
 	subscriberSeq        uint64
-	generation           uint64
 	connected            bool
 }
 
@@ -52,13 +51,16 @@ type marketSubscriber struct {
 	subscriptions []exchange.Subscription
 	events        chan domain.MarketEvent
 	errors        chan error
-	state         chan exchange.StreamEvent
+	done          <-chan struct{}
+	cancel        context.CancelFunc
 }
 
 type executionSubscriber struct {
 	accountID  domain.ExchangeAccountID
 	executions chan exchange.Execution
 	errors     chan error
+	done       <-chan struct{}
+	cancel     context.CancelFunc
 }
 
 func New(name string, capabilities exchange.Capabilities) *Exchange {
@@ -68,7 +70,6 @@ func New(name string, capabilities exchange.Capabilities) *Exchange {
 		orders:               make(map[domain.OrderID]domain.Order),
 		marketSubscribers:    make(map[uint64]*marketSubscriber),
 		executionSubscribers: make(map[uint64]*executionSubscriber),
-		generation:           1,
 		connected:            true,
 	}
 }
@@ -110,6 +111,9 @@ func (f *Exchange) Portfolio(_ context.Context, accountID domain.ExchangeAccount
 }
 
 func (f *Exchange) SubscribeMarketData(ctx context.Context, subscriptions []exchange.Subscription) (exchange.MarketStream, error) {
+	if err := ctx.Err(); err != nil {
+		return exchange.MarketStream{}, err
+	}
 	for i, subscription := range subscriptions {
 		if err := subscription.Validate(); err != nil {
 			return exchange.MarketStream{}, fmt.Errorf("subscription %d: %w", i, err)
@@ -117,43 +121,49 @@ func (f *Exchange) SubscribeMarketData(ctx context.Context, subscriptions []exch
 	}
 
 	f.mu.Lock()
+	if !f.connected {
+		f.mu.Unlock()
+		return exchange.MarketStream{}, exchangeError("subscribe market data", exchange.ErrorTransient)
+	}
 	f.subscriberSeq++
 	id := f.subscriberSeq
+	streamCtx, cancel := context.WithCancel(ctx)
 	subscriber := &marketSubscriber{
 		subscriptions: append([]exchange.Subscription(nil), subscriptions...),
 		events:        make(chan domain.MarketEvent, 32),
-		errors:        make(chan error, 8),
-		state:         make(chan exchange.StreamEvent, 8),
+		errors:        make(chan error, 1),
+		done:          streamCtx.Done(),
+		cancel:        cancel,
 	}
 	f.marketSubscribers[id] = subscriber
-	generation := f.generation
-	state := exchange.StreamHealthy
-	if !f.connected {
-		state = exchange.StreamDisconnected
-	}
 	f.mu.Unlock()
 
-	subscriber.state <- exchange.StreamEvent{
-		State: state, Generation: generation,
-		Subscriptions: append([]exchange.Subscription(nil), subscriptions...),
-	}
-	go f.removeMarketSubscriber(ctx, id, subscriber)
-	return exchange.MarketStream{Events: subscriber.events, Errors: subscriber.errors, State: subscriber.state}, nil
+	go f.removeMarketSubscriber(id, subscriber)
+	return exchange.MarketStream{Events: subscriber.events, Errors: subscriber.errors}, nil
 }
 
 func (f *Exchange) SubscribeExecutions(ctx context.Context, accountID domain.ExchangeAccountID) (exchange.ExecutionStream, error) {
+	if err := ctx.Err(); err != nil {
+		return exchange.ExecutionStream{}, err
+	}
 	if err := accountID.Validate(); err != nil {
 		return exchange.ExecutionStream{}, fmt.Errorf("account ID: %w", err)
 	}
 	f.mu.Lock()
+	if !f.connected {
+		f.mu.Unlock()
+		return exchange.ExecutionStream{}, exchangeError("subscribe executions", exchange.ErrorTransient)
+	}
 	f.subscriberSeq++
 	id := f.subscriberSeq
+	streamCtx, cancel := context.WithCancel(ctx)
 	subscriber := &executionSubscriber{
-		accountID: accountID, executions: make(chan exchange.Execution, 32), errors: make(chan error, 8),
+		accountID: accountID, executions: make(chan exchange.Execution, 32), errors: make(chan error, 1),
+		done: streamCtx.Done(), cancel: cancel,
 	}
 	f.executionSubscribers[id] = subscriber
 	f.mu.Unlock()
-	go f.removeExecutionSubscriber(ctx, id, subscriber)
+	go f.removeExecutionSubscriber(id, subscriber)
 	return exchange.ExecutionStream{Executions: subscriber.executions, Errors: subscriber.errors}, nil
 }
 
@@ -290,8 +300,8 @@ func (f *Exchange) PublishMarket(event domain.MarketEvent) error {
 	return nil
 }
 
-// Disconnect and Reconnect deterministically emulate stream lifecycle without
-// timers. Desired subscriptions remain attached to each subscriber.
+// Disconnect terminates all current streams. Recovery needs a new subscription
+// lifetime; this adapter instance never reconnects.
 func (f *Exchange) Disconnect() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -299,34 +309,26 @@ func (f *Exchange) Disconnect() {
 		return
 	}
 	f.connected = false
-	err := exchangeError("market stream", exchange.ErrorTransient)
 	for _, subscriber := range f.marketSubscribers {
-		subscriber.errors <- err
-		subscriber.state <- exchange.StreamEvent{
-			State: exchange.StreamDisconnected, Generation: f.generation,
-			Subscriptions: append([]exchange.Subscription(nil), subscriber.subscriptions...),
+		select {
+		case <-subscriber.done:
+		default:
+			subscriber.errors <- exchangeError("market stream", exchange.ErrorTransient)
 		}
+		subscriber.cancel()
+	}
+	for _, subscriber := range f.executionSubscribers {
+		select {
+		case <-subscriber.done:
+		default:
+			subscriber.errors <- exchangeError("execution stream", exchange.ErrorTransient)
+		}
+		subscriber.cancel()
 	}
 }
 
-func (f *Exchange) Reconnect() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.connected {
-		return
-	}
-	f.connected = true
-	f.generation++
-	for _, subscriber := range f.marketSubscribers {
-		subscriber.state <- exchange.StreamEvent{
-			State: exchange.StreamReconnected, Generation: f.generation,
-			Subscriptions: append([]exchange.Subscription(nil), subscriber.subscriptions...),
-		}
-	}
-}
-
-func (f *Exchange) removeMarketSubscriber(ctx context.Context, id uint64, subscriber *marketSubscriber) {
-	<-ctx.Done()
+func (f *Exchange) removeMarketSubscriber(id uint64, subscriber *marketSubscriber) {
+	<-subscriber.done
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.marketSubscribers[id] != subscriber {
@@ -335,12 +337,10 @@ func (f *Exchange) removeMarketSubscriber(ctx context.Context, id uint64, subscr
 	delete(f.marketSubscribers, id)
 	close(subscriber.events)
 	close(subscriber.errors)
-	subscriber.state <- exchange.StreamEvent{State: exchange.StreamClosed, Generation: f.generation}
-	close(subscriber.state)
 }
 
-func (f *Exchange) removeExecutionSubscriber(ctx context.Context, id uint64, subscriber *executionSubscriber) {
-	<-ctx.Done()
+func (f *Exchange) removeExecutionSubscriber(id uint64, subscriber *executionSubscriber) {
+	<-subscriber.done
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.executionSubscribers[id] != subscriber {

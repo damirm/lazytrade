@@ -78,9 +78,7 @@ func TestSubscribeExecutionsMapsTradeWithoutInMemoryOrderContext(t *testing.T) {
 	if len(opener.request.GetAccounts()) != 1 || opener.request.GetAccounts()[0] != "broker-account" {
 		t.Fatalf("stream accounts = %v", opener.request.GetAccounts())
 	}
-	if err := <-stream.Errors; err != nil {
-		t.Fatalf("stream error = %v", err)
-	}
+	awaitTerminalError(t, stream.Errors, "EOF")
 }
 
 func TestSubscribeExecutionsFailsClosedForMissingOrderState(t *testing.T) {
@@ -162,8 +160,62 @@ func TestSubscribeExecutionsAcceptsValidSubscriptionConfirmation(t *testing.T) {
 	if _, ok := <-stream.Executions; ok {
 		t.Fatal("execution stream did not close after EOF")
 	}
-	if err := <-stream.Errors; err != nil {
-		t.Fatalf("stream error = %v", err)
+	awaitTerminalError(t, stream.Errors, "EOF")
+}
+
+type contextTradesReceiver struct{ ctx context.Context }
+
+func (r contextTradesReceiver) Recv() (*pb.TradesStreamResponse, error) {
+	<-r.ctx.Done()
+	return nil, r.ctx.Err()
+}
+
+type contextTradesOpener struct {
+	ctx      context.Context
+	receiver tradesReceiver
+}
+
+func (o *contextTradesOpener) OpenTrades(ctx context.Context, _ *pb.TradesStreamRequest) (tradesReceiver, error) {
+	o.ctx = ctx
+	if o.receiver != nil {
+		return o.receiver, nil
+	}
+	return contextTradesReceiver{ctx: ctx}, nil
+}
+
+func TestSubscribeExecutionsCancellationIsQuietAndCancelsChild(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	opener := &contextTradesOpener{}
+	adapter := orderTestAdapter(&sandboxStub{})
+	adapter.orderStream = opener
+	stream, err := adapter.SubscribeExecutions(ctx, "sandbox-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	awaitClosed(t, stream.Executions)
+	awaitClosed(t, stream.Errors)
+	select {
+	case <-opener.ctx.Done():
+	default:
+		t.Fatal("execution stream child context was not canceled")
+	}
+}
+
+func TestSubscribeExecutionsEOFCancelsChild(t *testing.T) {
+	opener := &contextTradesOpener{receiver: &tradesReceiverStub{}}
+	adapter := orderTestAdapter(&sandboxStub{})
+	adapter.orderStream = opener
+	stream, err := adapter.SubscribeExecutions(context.Background(), "sandbox-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitTerminalError(t, stream.Errors, "EOF")
+	awaitClosed(t, stream.Executions)
+	select {
+	case <-opener.ctx.Done():
+	default:
+		t.Fatal("execution stream child context was not canceled on EOF")
 	}
 }
 

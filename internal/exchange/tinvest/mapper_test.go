@@ -172,12 +172,3 @@ func TestMapError(t *testing.T) {
 		}
 	}
 }
-
-func TestBackoffIsBounded(t *testing.T) {
-	if got := backoff(0); got.String() != "250ms" {
-		t.Fatalf("unexpected initial backoff %s", got)
-	}
-	if got := backoff(100); got.String() != "30s" {
-		t.Fatalf("unexpected capped backoff %s", got)
-	}
-}

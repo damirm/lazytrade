@@ -96,7 +96,7 @@ func TestPartialAndMultipleFills(t *testing.T) {
 	}
 }
 
-func TestMarketDisconnectReconnectRestoresSubscriptions(t *testing.T) {
+func TestDisconnectTerminatesMarketAndExecutionStreams(t *testing.T) {
 	fake := New("fake", exchange.Capabilities{StreamingCandles: true})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -107,29 +107,10 @@ func TestMarketDisconnectReconnectRestoresSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial := receiveState(t, stream.State)
-	if initial.State != exchange.StreamHealthy || initial.Generation != 1 {
-		t.Fatalf("initial state = %+v", initial)
+	executions, err := fake.SubscribeExecutions(ctx, "account")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	fake.Disconnect()
-	if err := receiveError(t, stream.Errors); !exchange.IsCategory(err, exchange.ErrorTransient) {
-		t.Fatalf("disconnect error = %v", err)
-	}
-	disconnected := receiveState(t, stream.State)
-	if disconnected.State != exchange.StreamDisconnected {
-		t.Fatalf("state = %v, want disconnected", disconnected.State)
-	}
-
-	fake.Reconnect()
-	reconnected := receiveState(t, stream.State)
-	if reconnected.State != exchange.StreamReconnected || reconnected.Generation != 2 {
-		t.Fatalf("reconnected state = %+v", reconnected)
-	}
-	if len(reconnected.Subscriptions) != 1 || reconnected.Subscriptions[0] != subscription {
-		t.Fatalf("subscriptions not restored: %+v", reconnected.Subscriptions)
-	}
-
 	event := candleEvent(t)
 	if err := fake.PublishMarket(event); err != nil {
 		t.Fatal(err)
@@ -141,6 +122,66 @@ func TestMarketDisconnectReconnectRestoresSubscriptions(t *testing.T) {
 		}
 	default:
 		t.Fatal("market event was not published synchronously")
+	}
+	fake.Disconnect()
+	fake.Disconnect() // Idempotent; no duplicate errors or closing closed channels.
+	for _, streamErrors := range []<-chan error{stream.Errors, executions.Errors} {
+		if err := receiveError(t, streamErrors); !exchange.IsCategory(err, exchange.ErrorTransient) {
+			t.Fatalf("disconnect error = %v", err)
+		}
+		awaitFakeClosed(t, streamErrors)
+	}
+	awaitFakeClosed(t, stream.Events)
+	awaitFakeClosed(t, executions.Executions)
+	if _, err := fake.SubscribeMarketData(ctx, []exchange.Subscription{subscription}); err == nil {
+		t.Fatal("disconnected adapter accepted market subscription")
+	}
+	if _, err := fake.SubscribeExecutions(ctx, "account"); err == nil {
+		t.Fatal("disconnected adapter accepted execution subscription")
+	}
+	if err := fake.PublishMarket(event); err == nil {
+		t.Fatal("disconnected adapter published an event")
+	}
+}
+
+func TestDisconnectCleansUpBackgroundSubscribers(t *testing.T) {
+	fake := New("fake", exchange.Capabilities{StreamingCandles: true})
+	market, err := fake.SubscribeMarketData(context.Background(), []exchange.Subscription{{
+		InstrumentID: "instrument", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executions, err := fake.SubscribeExecutions(context.Background(), "account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	var marketDone, executionDone <-chan struct{}
+	for _, subscriber := range fake.marketSubscribers {
+		marketDone = subscriber.done
+	}
+	for _, subscriber := range fake.executionSubscribers {
+		executionDone = subscriber.done
+	}
+	fake.mu.Unlock()
+	fake.Disconnect()
+	if err := receiveError(t, market.Errors); !exchange.IsCategory(err, exchange.ErrorTransient) {
+		t.Fatalf("market terminal error = %v", err)
+	}
+	if err := receiveError(t, executions.Errors); !exchange.IsCategory(err, exchange.ErrorTransient) {
+		t.Fatalf("execution terminal error = %v", err)
+	}
+	awaitFakeClosed(t, market.Errors)
+	awaitFakeClosed(t, executions.Errors)
+	awaitFakeClosed(t, market.Events)
+	awaitFakeClosed(t, executions.Executions)
+	awaitFakeSignal(t, marketDone)
+	awaitFakeSignal(t, executionDone)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.marketSubscribers) != 0 || len(fake.executionSubscribers) != 0 {
+		t.Fatalf("subscribers remain after streams closed: market=%d execution=%d", len(fake.marketSubscribers), len(fake.executionSubscribers))
 	}
 }
 
@@ -243,17 +284,6 @@ func candleEvent(t *testing.T) domain.MarketEvent {
 	}
 }
 
-func receiveState(t *testing.T, channel <-chan exchange.StreamEvent) exchange.StreamEvent {
-	t.Helper()
-	select {
-	case event := <-channel:
-		return event
-	default:
-		t.Fatal("stream state was not published synchronously")
-		return exchange.StreamEvent{}
-	}
-}
-
 func receiveError(t *testing.T, channel <-chan error) error {
 	t.Helper()
 	select {
@@ -262,5 +292,26 @@ func receiveError(t *testing.T, channel <-chan error) error {
 	default:
 		t.Fatal("stream error was not published synchronously")
 		return nil
+	}
+}
+
+func awaitFakeClosed[T any](t *testing.T, channel <-chan T) {
+	t.Helper()
+	select {
+	case value, ok := <-channel:
+		if ok {
+			t.Fatalf("stream yielded unexpected value after termination: %v", value)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stream did not close")
+	}
+}
+
+func awaitFakeSignal(t *testing.T, signal <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber lifetime was not canceled")
 	}
 }

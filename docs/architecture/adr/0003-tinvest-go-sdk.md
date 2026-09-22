@@ -33,3 +33,11 @@ Sandbox `PostOrder`, `CancelOrder`, account create и pay-in поддержив�
 никогда автоматически не повторяются после неоднозначного результата.
 Read-only transient RPC используют bounded retry. Детальная текущая политика
 описана в `docs/architecture/trading-runtime.md`.
+
+## Дополнение 2026-09-22: R7
+
+Упоминание reconnect в исходном решении не описывает текущий sandbox MVP.
+Streams теперь одноразовые: terminal error/EOF завершают поток, runtime
+блокируется и требует restart/recovery. Reconnect удалён вместе с backoff и
+поколениями соединений; вернуть его можно отдельным решением вместе с degraded
+state, запретом новых сигналов во время разрыва и soak tests.

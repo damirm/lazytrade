@@ -41,6 +41,36 @@ accounts, instruments, portfolio, order state/list, market data и history.
 status и malformed success response трактуются как `UnknownOutcome` и
 `Retryable=false`.
 
+## Stream supervision: sandbox MVP
+
+Market и execution streams одноразовые: `Subscribe…` открывает один RPC;
+market subscription requests отправляются до возврата из `SubscribeMarketData`.
+Ошибки подготовки/open/send возвращаются вызывающему коду напрямую. После
+успешного открытия consumer получает только data channel и `Errors`.
+
+- Transport/mapping error и неожиданный EOF публикуют одну terminal error,
+  после чего оба канала закрываются. Автоматического reconnect/backoff нет.
+- Runtime трактует ошибку или неожиданное закрытие любого канала как fail
+  closed: account runtime завершается, активные стратегии получают `blocked`.
+- Отмена родительского context — штатное завершение без terminal error;
+  дочерний RPC context отменяется при любом выходе receive loop, в том числе
+  при ошибке mapper и блокировке consumer.
+- `StreamState`, `StreamEvent`, поколения соединения и восстановление списка
+  подписок удалены. Новый запуск проходит обычный startup recovery до торговли.
+- Read-only unary retries (включая metadata и `GetOrderState`) не изменены.
+
+Открытие потока не означает получение broker ACK или первой котировки. Ранее
+`StreamHealthy` также отправлялся до первого `Recv`. `agent preflight` проверяет
+открытие потоков и уже доступные ошибки, но не ждёт market event, поэтому может
+работать при закрытом рынке. Он не доказывает полноценную доставку данных;
+полная проверка market subscription ACK остаётся отдельным непокрытым пунктом
+адаптера, не скрытым за названием `healthy`.
+
+Reconnect отложен: его нельзя вернуть только внутри адаптера. Для этого нужны
+состояние `degraded`, запрет новых сигналов во время разрыва, согласованный
+recovery/resubscribe протокол и soak tests. Решение R7 убирает недостижимый путь,
+а не ослабляет реакцию runtime на потерю связи.
+
 ## Execution durability
 
 Execution stream не обновляет projections напрямую:

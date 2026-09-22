@@ -598,8 +598,14 @@ allow_live_trading: false
 
 #### FR-EXCHANGE-005
 
-Переподключение market-data stream должно использовать bounded exponential
-backoff с jitter. После переподключения подписки восстанавливаются.
+Sandbox MVP использует одноразовые market/execution streams: terminal error
+или неожиданный EOF завершает поток и блокирует runtime до restart/recovery.
+Успешный `SubscribeMarketData` означает open/send, а не broker ACK. Отдельного
+канала состояний и поколений соединения нет (R7).
+
+Будущий reconnect требует отдельного решения: bounded exponential backoff с
+jitter и восстановление subscriptions допустимы только вместе с `degraded`,
+запретом новых сигналов во время разрыва и soak tests.
 
 #### FR-EXCHANGE-006
 
@@ -923,7 +929,7 @@ Mutation RPC (`OpenSandboxAccount`, `SandboxPayIn`, `PostOrder`, `CancelOrder`)
 никогда не отправляются повторно на уровне адаптера. При неоднозначном
 transport outcome дальнейшее решение принимается reconciliation по внешнему
 состоянию и idempotency key, а не слепым повтором команды. Открытие streaming
-RPC и их reconnect policy также не используют unary retry helper. Обогащение
+RPC выполняется один раз, без unary retry helper и reconnect. Обогащение
 execution stream через `GetOrderState` ограничено двумя попытками, чтобы один
 медленный ответ не блокировал поток надолго.
 
@@ -1559,7 +1565,9 @@ application logs.
 
 - Перезапуск процесса не должен приводить к дублированию ордеров.
 - Повторная доставка execution event не должна дублировать fill.
-- Временная недоступность market data вызывает reconnect, а не потерю процесса.
+- Потеря market/execution stream завершает account runtime безопасно с
+  `blocked`; после restart выполняется recovery до новых сигналов. Reconnect
+  отложен до отдельного протокола degraded/recovery.
 - Критическая ошибка переводит затронутый scope в безопасное состояние.
 
 ### NFR-003: производительность
@@ -2076,7 +2084,7 @@ gates. Они могут блокировать исполнение даже п
    - duplicate event;
    - transient error;
    - unknown outcome;
-   - disconnect/reconnect.
+   - terminal disconnect без автоматического reconnect.
 5. Добавить contract tests адаптера.
 
 Критерии приёмки:
@@ -2094,7 +2102,8 @@ gates. Они могут блокировать исполнение даже п
 3. Получать portfolio snapshot.
 4. Подписываться на необходимые market data.
 5. Реализовать mapper цен и quantities.
-6. Реализовать reconnect/backoff.
+6. Реализовать one-shot stream supervision: terminal error/EOF, cancellation
+   и освобождение RPC без reconnect (R7).
 7. Добавить sandbox integration tests, запускаемые при наличии env vars.
 8. Добавить recorded/fake fixtures для обычного CI.
 
@@ -2286,7 +2295,8 @@ pipeline не зависят от сетевой биржи.
 Задачи:
 
 1. Провести длительный sandbox soak test.
-2. Проверить reconnect при сетевых сбоях.
+2. Проверить fail closed при сетевых сбоях и recovery после restart; reconnect
+   тестируется только после отдельной реализации degraded/recovery протокола.
 3. Проверить recovery после принудительного завершения процесса в разных
    точках order pipeline.
 4. Запустить race detector.

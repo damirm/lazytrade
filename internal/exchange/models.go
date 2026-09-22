@@ -45,28 +45,17 @@ func (s Subscription) Validate() error {
 	return nil
 }
 
-type StreamState uint8
-
-const (
-	StreamConnecting StreamState = iota + 1
-	StreamHealthy
-	StreamDisconnected
-	StreamReconnected
-	StreamClosed
-)
-
-type StreamEvent struct {
-	State         StreamState
-	Generation    uint64
-	Subscriptions []Subscription
-}
-
+// MarketStream is a single subscription lifetime. SubscribeMarketData returns
+// after opening the transport and sending subscriptions, not after broker ACKs.
+// A terminal failure is sent once on Errors, then both channels are closed.
+// Cancellation closes channels without an error. Streams never reconnect;
+// consumers must fail closed on unexpected closure and restart through recovery.
 type MarketStream struct {
 	Events <-chan domain.MarketEvent
 	Errors <-chan error
-	State  <-chan StreamEvent
 }
 
+// ExecutionStream follows the same one-shot lifecycle as MarketStream.
 type ExecutionStream struct {
 	Executions <-chan Execution
 	Errors     <-chan error
