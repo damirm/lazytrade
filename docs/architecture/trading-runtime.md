@@ -149,9 +149,29 @@ Lifecycle хранится в отдельной строке `strategy_lifecycl
 10. Выполнить post-subscription reconciliation.
 11. Подписаться на market data и перевести стратегии в `running`.
 
+В текущем коде `Runtime.Run` после проверки конфигурации, repair failed
+signals и записи `reconciling` вызывает приватную фазу `startup`. Она возвращает
+`startupResult` с account ID, активными workers/risk gates, market stream,
+каналами execution pump, mutex для storage и состоянием отложенного signal
+recovery. Результат доступен только после завершения перечисленных шагов,
+записи всех `running` lifecycle и, если канал настроен, отправки `Ready`;
+при ошибке возвращается нулевой результат без `Ready`. Затем `runMarketLoop`
+потребляет этот результат.
+Порядок intent recovery, stream/history ingress, обеих reconciliation,
+checkpoint, отправки только `ready` intents и перехода lifecycle не изменён.
+
 Любая критическая неоднозначность переводит runtime в blocked state. Один
 strategy worker failure должен останавливать только эту стратегию; общий
 execution stream продолжает принимать исполнения ранее размещённых заявок.
+
+Открытые находки по безопасности текущей реализации, обнаруженные при R9
+(поведение существовало до разделения файлов): execution pump использует
+родительский context и может продолжить работу после ошибки `startup`, пока
+вызывающий не отменит context; накопленная в канале ошибка pump не проверяется
+перед отправкой ранее сохранённых `ready` intents; terminal stream error может
+соревноваться с уже готовым market event в `select` основного цикла. R9 не
+меняет эти сценарии; для них нужны отдельные воспроизводящие тесты и решение,
+не подменяющее незакрытый sandbox round trip.
 
 ## Reconciliation
 

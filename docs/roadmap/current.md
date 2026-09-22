@@ -98,3 +98,11 @@ PostgreSQL, [multi-exchange](multi-exchange.md) и каталог дополни
 основного маршрута. В первую очередь из него берутся задачи, устраняющие
 расхождение источников истины или укрепляющие safety/recovery текущего sandbox
 контура; он не вводит новый продуктовый milestone.
+
+R9 разделил приватные фазы startup/recovery и market loop и сгруппировал
+runtime helpers по ответственности без изменения торгового поведения. Реальный
+sandbox buy/sell round trip остаётся неподтверждённым; следующий фиксированный
+пункт поддерживающего плана — R10 (устранение дублирования composition-кода).
+Открытые safety-находки R9 перечислены в
+[trading-runtime.md](../architecture/trading-runtime.md#startup-sequence) и
+не меняют основной порядок работ выше.
