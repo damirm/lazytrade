@@ -57,7 +57,7 @@ type marketSubscriber struct {
 
 type executionSubscriber struct {
 	accountID  domain.ExchangeAccountID
-	executions chan domain.Execution
+	executions chan exchange.Execution
 	errors     chan error
 }
 
@@ -149,7 +149,7 @@ func (f *Exchange) SubscribeExecutions(ctx context.Context, accountID domain.Exc
 	f.subscriberSeq++
 	id := f.subscriberSeq
 	subscriber := &executionSubscriber{
-		accountID: accountID, executions: make(chan domain.Execution, 32), errors: make(chan error, 8),
+		accountID: accountID, executions: make(chan exchange.Execution, 32), errors: make(chan error, 8),
 	}
 	f.executionSubscribers[id] = subscriber
 	f.mu.Unlock()
@@ -203,6 +203,7 @@ func (f *Exchange) PlaceOrder(_ context.Context, request exchange.NewOrder) (dom
 	default:
 		return domain.Order{}, exchangeError("place order", exchange.ErrorPermanent)
 	}
+	f.orders[orderID] = order
 	for _, fill := range fills {
 		order.FilledQuantity.Value = order.FilledQuantity.Value.Add(fill.Quantity.Value)
 		f.publishExecutionLocked(request.ExchangeAccountID, fill)
@@ -351,9 +352,16 @@ func (f *Exchange) removeExecutionSubscriber(ctx context.Context, id uint64, sub
 }
 
 func (f *Exchange) publishExecutionLocked(accountID domain.ExchangeAccountID, execution domain.Execution) {
+	message := exchange.Execution{
+		ID: execution.ID, OrderID: execution.OrderID,
+		ClientOrderID: f.orders[execution.OrderID].ClientOrderID,
+		InstrumentID:  execution.InstrumentID, Side: execution.Side,
+		Quantity: execution.Quantity, Price: execution.Price, Commission: execution.Commission,
+		ExecutedAt: execution.ExecutedAt, ExchangeTrade: execution.ExchangeTrade,
+	}
 	for _, subscriber := range f.executionSubscribers {
 		if subscriber.accountID == accountID {
-			subscriber.executions <- execution
+			subscriber.executions <- message
 		}
 	}
 }

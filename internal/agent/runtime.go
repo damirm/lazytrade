@@ -45,6 +45,7 @@ type StrategyBinding struct {
 
 type Store interface {
 	storage.IntentLookupStore
+	storage.ExecutionOwnerStore
 	storage.SignalOutboxStore
 	storage.OrderOutboxStore
 	storage.ExecutionInboxStore
@@ -366,7 +367,7 @@ func (r Runtime) startExecutionPump(
 					}
 					return
 				}
-			case execution, ok := <-stream.Executions:
+			case incoming, ok := <-stream.Executions:
 				if !ok {
 					if ctx.Err() == nil {
 						errorsOut <- errors.New("execution stream closed")
@@ -381,9 +382,12 @@ func (r Runtime) startExecutionPump(
 					now = lastReceived.Add(time.Microsecond)
 				}
 				lastReceived = now
-				tradingDay := r.executionTradingDay(execution.StrategyID, execution.ExecutedAt)
 				storeMu.Lock()
-				_, _, err := r.Intents.StageExecution(ctx, accountID, execution, now, tradingDay)
+				execution, err := r.attributeExecution(ctx, accountID, incoming)
+				if err == nil {
+					tradingDay := r.executionTradingDay(execution.StrategyID, execution.ExecutedAt)
+					_, _, err = r.Intents.StageExecution(ctx, accountID, execution, now, tradingDay)
+				}
 				storeMu.Unlock()
 				if err != nil {
 					select {
@@ -830,9 +834,6 @@ func (r Runtime) recordSubmitted(ctx context.Context, intent storage.OrderIntent
 		IntentID: intent.ID, Status: "submitted", Order: &record, Audit: audit,
 	}); err != nil {
 		return fmt.Errorf("persist exchange order: %w", err)
-	}
-	if registrar, ok := r.Exchange.(exchange.OrderContextRegistrar); ok {
-		registrar.RegisterOrderContext(order.ID, intent.StrategyID, intent.InstrumentID, intent.Side)
 	}
 	if r.OnOrder != nil {
 		r.OnOrder(order)

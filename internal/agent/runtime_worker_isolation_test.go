@@ -157,7 +157,7 @@ func TestRuntimeRecordsLateExecutionAfterOwningWorkerFails(t *testing.T) {
 	ctx := context.Background()
 	store, workers, strategyIDs, subscriptions := seedTwoPendingBuySignalsForIsolation(t)
 	base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
-	executions := make(chan domain.Execution, 1)
+	executions := make(chan exchange.Execution, 1)
 	streamErrors := make(chan error, 1)
 	adapter := &controlledExecutionExchange{
 		Exchange:   base,
@@ -213,13 +213,13 @@ func TestRuntimeRecordsLateExecutionAfterOwningWorkerFails(t *testing.T) {
 	waitForLifecycleStatus(t, lifecycle, "ma-a", RuntimeStatusFailed)
 
 	executedAt := time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC)
-	executions <- domain.Execution{
-		ID:           "late-fill-a",
-		OrderID:      order.ExchangeOrderID,
-		StrategyID:   "ma-a",
-		InstrumentID: "TEST-A",
-		Side:         order.Side,
-		Quantity:     order.RequestedQuantity,
+	executions <- exchange.Execution{
+		ID:            "late-fill-a",
+		OrderID:       order.ExchangeOrderID,
+		ClientOrderID: order.ClientOrderID,
+		InstrumentID:  "TEST-A",
+		Side:          order.Side,
+		Quantity:      order.RequestedQuantity,
 		Price: domain.Price{
 			Value: decimal.NewFromInt(100),
 			Asset: "USD",

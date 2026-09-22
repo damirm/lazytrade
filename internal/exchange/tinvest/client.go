@@ -42,9 +42,6 @@ type Adapter struct {
 	orderStream     tradesOpener
 	metadataMu      sync.RWMutex
 	metadata        map[domain.InstrumentID]domain.Instrument
-	orderContextMu  sync.RWMutex
-	orderContexts   map[domain.OrderID]executionOrderContext
-	clientContexts  map[domain.ClientOrderID]executionOrderContext
 	readRetry       readRetryPolicy
 }
 
@@ -79,9 +76,7 @@ func Open(ctx context.Context, cfg Config, opts ...grpc.DialOption) (*Adapter, e
 		timeout = 10 * time.Second
 	}
 	a := &Adapter{name: cfg.Name, accountID: cfg.AccountID, timeout: timeout, conn: conn,
-		metadata:      make(map[domain.InstrumentID]domain.Instrument),
-		orderContexts: make(map[domain.OrderID]executionOrderContext)}
-	a.clientContexts = make(map[domain.ClientOrderID]executionOrderContext)
+		metadata: make(map[domain.InstrumentID]domain.Instrument)}
 	a.instruments = pb.NewInstrumentsServiceClient(conn)
 	a.market = pb.NewMarketDataServiceClient(conn)
 	a.marketStream = pb.NewMarketDataStreamServiceClient(conn)

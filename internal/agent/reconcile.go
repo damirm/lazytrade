@@ -59,11 +59,6 @@ func (r Reconciler) Reconcile(ctx context.Context, accountID domain.ExchangeAcco
 	if err != nil {
 		return report, err
 	}
-	if registrar, ok := r.Exchange.(exchange.OrderContextRegistrar); ok {
-		for _, order := range localOrders {
-			registrar.RegisterOrderContext(order.ExchangeOrderID, order.StrategyID, order.InstrumentID, order.Side)
-		}
-	}
 	report.Issues = append(report.Issues, compareOpenOrders(localOrders, remoteOrders)...)
 	sort.Slice(report.Issues, func(i, j int) bool {
 		left, right := report.Issues[i], report.Issues[j]

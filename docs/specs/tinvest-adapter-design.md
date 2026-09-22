@@ -16,6 +16,14 @@
 - не принимать risk-решения и не повторять order при неопределённом исходе;
 - не использоваться simulated broker в backtest.
 
+Текущая execution boundary после R6: `TradesStream` нормализуется в
+`exchange.Execution` без strategy ID. `GetOrderState` используется для client
+order ID и фактической комиссии; account, order, instrument и side проверяются
+на согласованность. Владельца определяет runtime по SQLite intent/order, а не
+адаптер по in-memory context. Подробный текущий порядок ingress/recovery — в
+[`trading-runtime.md`](../architecture/trading-runtime.md); следующие разделы
+документа описывают также целевые, ещё не реализованные возможности.
+
 ## 2. Рекомендуемый протокол и клиент
 
 ### 2.1. Основной транспорт

@@ -66,9 +66,3 @@ type Exchange interface {
 	GetOrderByClientID(context.Context, domain.ClientOrderID) (domain.Order, error)
 	OpenOrders(context.Context, domain.ExchangeAccountID) ([]domain.Order, error)
 }
-
-// OrderContextRegistrar restores application metadata absent from exchange
-// execution messages.
-type OrderContextRegistrar interface {
-	RegisterOrderContext(domain.OrderID, domain.StrategyID, domain.InstrumentID, domain.OrderSide)
-}

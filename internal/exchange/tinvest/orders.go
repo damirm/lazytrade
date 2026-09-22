@@ -55,9 +55,6 @@ func (a *Adapter) PlaceOrder(ctx context.Context, request exchange.NewOrder) (do
 	if request.LimitPrice != nil {
 		apiRequest.Price = decimalQuotation(request.LimitPrice.Value)
 	}
-	a.registerClientOrderContext(request.ClientOrderID, executionOrderContext{
-		StrategyID: request.StrategyID, InstrumentID: request.InstrumentID, Side: request.Side,
-	})
 	cctx, cancel := a.timeoutContext(ctx)
 	defer cancel()
 	response, err := a.orders.PostOrder(cctx, apiRequest)
@@ -74,7 +71,6 @@ func (a *Adapter) PlaceOrder(ctx context.Context, request exchange.NewOrder) (do
 	if err != nil {
 		return domain.Order{}, mutationResponseError("map placed order response", err)
 	}
-	a.RegisterOrderContext(order.ID, request.StrategyID, request.InstrumentID, request.Side)
 	return order, nil
 }
 

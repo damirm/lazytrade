@@ -218,7 +218,7 @@ func TestRuntimeLifecycleIsRunningWhileReadyAndStoppedOnCancellation(t *testing.
 func TestRuntimeLifecycleBlocksAllStrategiesOnExecutionStreamError(t *testing.T) {
 	store, workers, strategyIDs, subscriptions, _ := seedTwoPendingSignals(t)
 	lifecycle := newLifecycleSpy()
-	executions := make(chan domain.Execution)
+	executions := make(chan exchange.Execution)
 	streamErrors := make(chan error, 1)
 	adapter := &controlledExecutionExchange{
 		Exchange:   fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true}),

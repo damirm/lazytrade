@@ -12,12 +12,6 @@ import (
 	pb "opensource.tbank.ru/invest/invest-go/proto"
 )
 
-type executionOrderContext struct {
-	StrategyID   domain.StrategyID
-	InstrumentID domain.InstrumentID
-	Side         domain.OrderSide
-}
-
 type tradesReceiver interface {
 	Recv() (*pb.TradesStreamResponse, error)
 }
@@ -32,38 +26,6 @@ func (o grpcTradesOpener) OpenTrades(ctx context.Context, request *pb.TradesStre
 	return o.client.TradesStream(ctx, request)
 }
 
-func (a *Adapter) RegisterOrderContext(
-	orderID domain.OrderID,
-	strategyID domain.StrategyID,
-	instrumentID domain.InstrumentID,
-	side domain.OrderSide,
-) {
-	if orderID.Validate() != nil || strategyID.Validate() != nil ||
-		instrumentID.Validate() != nil || (side != domain.OrderSideBuy && side != domain.OrderSideSell) {
-		return
-	}
-	a.orderContextMu.Lock()
-	defer a.orderContextMu.Unlock()
-	if a.orderContexts == nil {
-		a.orderContexts = make(map[domain.OrderID]executionOrderContext)
-	}
-	a.orderContexts[orderID] = executionOrderContext{
-		StrategyID: strategyID, InstrumentID: instrumentID, Side: side,
-	}
-}
-
-func (a *Adapter) registerClientOrderContext(clientID domain.ClientOrderID, orderContext executionOrderContext) {
-	if clientID.Validate() != nil {
-		return
-	}
-	a.orderContextMu.Lock()
-	defer a.orderContextMu.Unlock()
-	if a.clientContexts == nil {
-		a.clientContexts = make(map[domain.ClientOrderID]executionOrderContext)
-	}
-	a.clientContexts[clientID] = orderContext
-}
-
 func (a *Adapter) SubscribeExecutions(ctx context.Context, accountID domain.ExchangeAccountID) (exchange.ExecutionStream, error) {
 	if err := a.validateAccount(accountID); err != nil {
 		return exchange.ExecutionStream{}, err
@@ -75,7 +37,7 @@ func (a *Adapter) SubscribeExecutions(ctx context.Context, accountID domain.Exch
 	if err != nil {
 		return exchange.ExecutionStream{}, mapError("subscribe executions", err)
 	}
-	executions := make(chan domain.Execution, 32)
+	executions := make(chan exchange.Execution, 32)
 	streamErrors := make(chan error, 1)
 	go a.receiveExecutions(ctx, receiver, executions, streamErrors)
 	return exchange.ExecutionStream{Executions: executions, Errors: streamErrors}, nil
@@ -84,7 +46,7 @@ func (a *Adapter) SubscribeExecutions(ctx context.Context, accountID domain.Exch
 func (a *Adapter) receiveExecutions(
 	ctx context.Context,
 	receiver tradesReceiver,
-	executions chan<- domain.Execution,
+	executions chan<- exchange.Execution,
 	streamErrors chan<- error,
 ) {
 	defer close(executions)
@@ -151,35 +113,33 @@ func validateTradesSubscription(subscription *pb.SubscriptionResponse, accountID
 	return nil
 }
 
-func (a *Adapter) mapOrderTrades(ctx context.Context, trades *pb.OrderTrades) ([]domain.Execution, error) {
+func (a *Adapter) mapOrderTrades(ctx context.Context, trades *pb.OrderTrades) ([]exchange.Execution, error) {
 	orderID := domain.OrderID(trades.GetOrderId())
+	if err := orderID.Validate(); err != nil {
+		return nil, fmt.Errorf("execution order ID: %w", err)
+	}
+	if trades.GetAccountId() != a.accountID {
+		return nil, fmt.Errorf("execution order %q belongs to an unexpected account", orderID)
+	}
 	state, err := a.getRawOrderState(ctx, string(orderID), pb.OrderIdType_ORDER_ID_TYPE_EXCHANGE)
 	if err != nil {
 		return nil, err
 	}
-	a.orderContextMu.RLock()
-	orderContext, registeredByOrder := a.orderContexts[orderID]
-	ok := registeredByOrder
-	if !ok {
-		orderContext, ok = a.clientContexts[domain.ClientOrderID(state.GetOrderRequestId())]
+	if state == nil || state.GetOrderId() != string(orderID) {
+		return nil, errors.New("execution order state has an unexpected order ID")
 	}
-	a.orderContextMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("execution for unregistered order %q", orderID)
+	instrumentID := domain.InstrumentID(trades.GetInstrumentUid())
+	if err := instrumentID.Validate(); err != nil || state.GetInstrumentUid() != string(instrumentID) {
+		return nil, fmt.Errorf("execution order %q has an inconsistent instrument", orderID)
 	}
-	if trades.GetAccountId() != a.accountID {
-		return nil, fmt.Errorf("execution order %q belongs to unexpected account %q", orderID, trades.GetAccountId())
+	if trades.GetDirection() != pb.OrderDirection_ORDER_DIRECTION_BUY &&
+		trades.GetDirection() != pb.OrderDirection_ORDER_DIRECTION_SELL {
+		return nil, errors.New("execution has an invalid direction")
 	}
-	if domain.InstrumentID(trades.GetInstrumentUid()) != orderContext.InstrumentID {
-		return nil, fmt.Errorf("execution order %q belongs to unexpected instrument %q", orderID, trades.GetInstrumentUid())
+	if state.GetDirection() != trades.GetDirection() {
+		return nil, errors.New("execution direction disagrees with order state")
 	}
-	if orderSide(trades.GetDirection()) != orderContext.Side {
-		return nil, fmt.Errorf("execution order %q has unexpected direction", orderID)
-	}
-	if !registeredByOrder {
-		a.RegisterOrderContext(orderID, orderContext.StrategyID, orderContext.InstrumentID, orderContext.Side)
-	}
-	instrument, err := a.Instrument(ctx, orderContext.InstrumentID)
+	instrument, err := a.Instrument(ctx, instrumentID)
 	if err != nil {
 		return nil, fmt.Errorf("execution instrument: %w", err)
 	}
@@ -191,7 +151,7 @@ func (a *Adapter) mapOrderTrades(ctx context.Context, trades *pb.OrderTrades) ([
 	if !totalExecuted.IsPositive() {
 		return nil, errors.New("execution order state has no executed quantity")
 	}
-	result := make([]domain.Execution, 0, len(trades.GetTrades()))
+	result := make([]exchange.Execution, 0, len(trades.GetTrades()))
 	for _, trade := range trades.GetTrades() {
 		if trade.GetTradeId() == "" || trade.GetQuantity() <= 0 {
 			return nil, errors.New("execution trade ID and positive quantity are required")
@@ -205,13 +165,13 @@ func (a *Adapter) mapOrderTrades(ctx context.Context, trades *pb.OrderTrades) ([
 		if trade.GetDateTime() != nil {
 			executedAt = trade.GetDateTime()
 		}
-		if executedAt == nil {
-			return nil, errors.New("execution time is missing")
+		if executedAt == nil || !executedAt.IsValid() {
+			return nil, errors.New("execution time is missing or invalid")
 		}
-		execution := domain.Execution{
+		execution := exchange.Execution{
 			ID: domain.ExecutionID(trade.GetTradeId()), OrderID: orderID,
-			StrategyID: orderContext.StrategyID, InstrumentID: orderContext.InstrumentID,
-			Side: orderContext.Side, Quantity: domain.Quantity{Value: quantity}, Price: tradePrice,
+			ClientOrderID: domain.ClientOrderID(state.GetOrderRequestId()), InstrumentID: instrumentID,
+			Side: orderSide(trades.GetDirection()), Quantity: domain.Quantity{Value: quantity}, Price: tradePrice,
 			Commission: domain.Money{
 				Amount: commission.Amount.Mul(quantity).Div(totalExecuted),
 				Asset:  commission.Asset,
@@ -242,5 +202,3 @@ func (a *Adapter) getRawOrderState(ctx context.Context, id string, idType pb.Ord
 	}
 	return state, nil
 }
-
-var _ exchange.OrderContextRegistrar = (*Adapter)(nil)

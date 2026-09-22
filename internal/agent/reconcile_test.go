@@ -18,20 +18,6 @@ type reconciliationFixture struct {
 	orders    []storage.LocalOpenOrder
 }
 
-type contextRegisteringExchange struct {
-	exchange.Exchange
-	registered []domain.OrderID
-}
-
-func (e *contextRegisteringExchange) RegisterOrderContext(
-	orderID domain.OrderID,
-	_ domain.StrategyID,
-	_ domain.InstrumentID,
-	_ domain.OrderSide,
-) {
-	e.registered = append(e.registered, orderID)
-}
-
 func (f reconciliationFixture) ListPositionsByExchange(context.Context, domain.ExchangeAccountID) ([]storage.Position, error) {
 	return append([]storage.Position(nil), f.positions...), nil
 }
@@ -75,7 +61,7 @@ func TestReconcilerHealthySnapshot(t *testing.T) {
 	}
 }
 
-func TestReconcilerRestoresOpenOrderExecutionContext(t *testing.T) {
+func TestReconcilerMatchesPersistedSellOrder(t *testing.T) {
 	adapter := fake.New("fake", exchange.Capabilities{Sandbox: true})
 	adapter.SetPortfolio(exchange.Portfolio{AccountID: "fake", AsOf: time.Now().UTC()})
 	remote, err := adapter.PlaceOrder(context.Background(), exchange.NewOrder{
@@ -86,17 +72,13 @@ func TestReconcilerRestoresOpenOrderExecutionContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrapped := &contextRegisteringExchange{Exchange: adapter}
 	store := reconciliationFixture{orders: []storage.LocalOpenOrder{{
 		StrategyID: "ma", InstrumentID: "TEST", ClientOrderID: remote.ClientOrderID,
 		ExchangeOrderID: remote.ID, Side: domain.OrderSideSell, Status: "accepted",
 		RequestedQuantity: remote.Quantity, FilledQuantity: remote.FilledQuantity,
 	}}}
-	if _, err := (Reconciler{Exchange: wrapped, Store: store}).Reconcile(context.Background(), "fake"); err != nil {
+	if _, err := (Reconciler{Exchange: adapter, Store: store}).Reconcile(context.Background(), "fake"); err != nil {
 		t.Fatal(err)
-	}
-	if len(wrapped.registered) != 1 || wrapped.registered[0] != remote.ID {
-		t.Fatalf("registered order contexts = %v", wrapped.registered)
 	}
 }
 

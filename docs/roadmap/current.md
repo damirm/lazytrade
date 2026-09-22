@@ -11,7 +11,7 @@ T-Invest sandbox. Production trading намеренно выключен.
 - Cobra CLI и строгая YAML-конфигурация версии 1.
 - Загрузка `.env` при старте процесса без перезаписи уже заданных переменных.
 - Decimal domain model: деньги разных asset нельзя неявно агрегировать.
-- SQLite на `modernc.org/sqlite`, встроенные миграции 1–5 и single-agent lock.
+- SQLite на `modernc.org/sqlite`, встроенные миграции 1–6 и single-agent lock.
 - Exchange port, fake exchange и T-Invest adapter на
   `opensource.tbank.ru/invest/invest-go`.
 - T-Invest instruments, portfolio, candles, prices, order book, trades,
@@ -25,6 +25,8 @@ T-Invest sandbox. Production trading намеренно выключен.
   комиссии, slippage, metrics, JSON report и trades CSV.
 - Durable signal state, risk decisions, order intents, execution inbox,
   positions, P&L, cumulative commissions и audit events.
+- Атрибуция streaming fills через durable intent/order, без in-memory contexts
+  в адаптере; ранние fills допускают staging до сохранения ответа на заявку.
 - Startup recovery: unresolved intents, history scan, execution inbox drain и
   reconciliation до перехода стратегий в `running`.
 - Read-only API retries и conservative mutation `UnknownOutcome` handling.

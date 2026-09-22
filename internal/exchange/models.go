@@ -68,7 +68,7 @@ type MarketStream struct {
 }
 
 type ExecutionStream struct {
-	Executions <-chan domain.Execution
+	Executions <-chan Execution
 	Errors     <-chan error
 }
 

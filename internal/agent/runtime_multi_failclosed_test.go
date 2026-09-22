@@ -14,7 +14,7 @@ import (
 
 type controlledExecutionExchange struct {
 	exchange.Exchange
-	executions chan domain.Execution
+	executions chan exchange.Execution
 	errors     chan error
 }
 
@@ -28,26 +28,26 @@ func (e *controlledExecutionExchange) SubscribeExecutions(
 func TestMultiStrategyRuntimeFailsClosedWhenExecutionStreamBreaks(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		breakIt func(chan domain.Execution, chan error)
+		breakIt func(chan exchange.Execution, chan error)
 		want    string
 	}{
 		{
 			name: "reported error",
-			breakIt: func(_ chan domain.Execution, streamErrors chan error) {
+			breakIt: func(_ chan exchange.Execution, streamErrors chan error) {
 				streamErrors <- errors.New("execution transport failed")
 			},
 			want: "execution stream: execution transport failed",
 		},
 		{
 			name: "execution channel closed",
-			breakIt: func(executions chan domain.Execution, _ chan error) {
+			breakIt: func(executions chan exchange.Execution, _ chan error) {
 				close(executions)
 			},
 			want: "execution stream closed",
 		},
 		{
 			name: "error channel closed",
-			breakIt: func(_ chan domain.Execution, streamErrors chan error) {
+			breakIt: func(_ chan exchange.Execution, streamErrors chan error) {
 				close(streamErrors)
 			},
 			want: "execution error stream closed",
@@ -56,7 +56,7 @@ func TestMultiStrategyRuntimeFailsClosedWhenExecutionStreamBreaks(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			store, workers, strategyIDs, subscriptions, _ := seedTwoPendingSignals(t)
 			base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
-			executions := make(chan domain.Execution)
+			executions := make(chan exchange.Execution)
 			streamErrors := make(chan error, 1)
 			adapter := &controlledExecutionExchange{
 				Exchange: base, executions: executions, errors: streamErrors,

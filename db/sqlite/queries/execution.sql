@@ -11,6 +11,9 @@ SELECT id, signal_id, strategy_id, exchange_account_id, instrument_id,
        status, payload_checksum, created_at, updated_at
 FROM order_intents WHERE client_order_id = ?;
 
+-- name: GetOrderIntentAccount :one
+SELECT exchange_account_id FROM order_intents WHERE id = ?;
+
 -- name: ListSignalsPendingRisk :many
 SELECT s.id, s.strategy_id, s.exchange_account_id, s.instrument_id,
        s.action, s.order_type, s.quantity, s.limit_price, s.price_asset,
@@ -78,6 +81,16 @@ SELECT o.id, o.requested_quantity, o.filled_quantity, oi.strategy_id, oi.instrum
 FROM orders o
 JOIN order_intents oi ON oi.id = o.order_intent_id
 WHERE o.exchange_account_id = ? AND o.exchange_order_id = ?;
+
+-- name: FindExecutionOwners :many
+SELECT oi.strategy_id, oi.instrument_id, oi.side, oi.client_order_id,
+       o.exchange_order_id, o.exchange_account_id AS order_account_id
+FROM order_intents oi
+LEFT JOIN orders o ON o.order_intent_id = oi.id
+WHERE oi.exchange_account_id = sqlc.arg(account_id)
+  AND (o.exchange_order_id = sqlc.arg(order_id)
+       OR oi.client_order_id = sqlc.arg(client_order_id))
+LIMIT 2;
 
 -- name: FindOrderForCommission :one
 SELECT o.id, oi.strategy_id

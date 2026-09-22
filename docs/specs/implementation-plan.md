@@ -834,6 +834,13 @@ Unknown-outcome ошибка при `PlaceOrder` не разрешает нем�
 
 Частичные исполнения должны поддерживаться как отдельные execution records.
 
+Execution stream отдаёт биржевую identity без strategy ID. До staging runtime
+определяет владельца по durable intent/order в account scope и проверяет
+instrument/side; неизвестное либо противоречивое владение означает fail closed.
+Client order ID позволяет атрибутировать ранний fill до сохранения ответа на
+заявку; после сохранения order достаточно exchange order ID. In-memory order
+contexts не являются источником атрибуции.
+
 Каждое полученное исполнение до изменения `orders`, `positions`, P&L и
 статистики сохраняется в durable `execution_inbox`. Inbox не имеет внешнего
 ключа на локальный order, поэтому допускает получение исполнения до завершения

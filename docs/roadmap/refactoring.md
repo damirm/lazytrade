@@ -159,19 +159,52 @@ type RuntimeConfig struct {
 
 ### R6. Безопасная атрибуция execution после рестарта
 
+Статус: реализовано 22 сентября 2026 года.
+
 Проблема: T-Invest adapter требует in-memory order context, но execution stream
 может получить fill до регистрации восстановленных ордеров.
 
-Работы:
+Реализация:
 
-1. Добавить тест, где fill приходит сразу после рестарта.
-2. Краткосрочно регистрировать все локальные order contexts до открытия stream.
-3. Затем перенести атрибуцию strategy ID в application/storage слой: adapter
-   отдаёт raw exchange identity, а локальный долговечный state определяет
-   стратегию.
-4. После переноса удалить `OrderContextRegistrar`.
+1. Exchange stream отдаёт `exchange.Execution` без strategy ID. T-Invest
+   нормализует биржевые IDs/instrument/side и комиссию без application contexts.
+2. Runtime определяет владельца через `ExecutionOwnerStore`: durable intent и
+   order внутри account scope, затем проверяет instrument/side. Оба переданных
+   ID обязаны согласоваться; неизвестное/противоречивое владение — fail closed.
+3. Client ID из сохранённого intent позволяет stage ранний fill до сохранения
+   ответа `PlaceOrder`; сохранённый exchange order ID позволяет stage сразу
+   после рестарта, даже без client ID. Apply по-прежнему требует локальный order.
+4. Удалены `OrderContextRegistrar`, обе карты contexts и их регистрация из
+   submission/reconciliation. Временная preregistration до открытия stream не
+   вводилась: она сохранила бы второй источник владения и зависимость от startup.
+5. Проверка account equality добавлена и при lookup, и в транзакционный writer
+   `ResolveOrderIntent`. Ошибка откатывает status, order и audit вместе.
 
-Критерий: ранний fill не теряется и не завершает execution ingress.
+Схема inbox, dedupe, trading-day policy и порядок startup не изменены; новая
+migration не нужна. Решение и ограничения описаны в
+[`trading-runtime.md`](../architecture/trading-runtime.md).
+
+Регрессионные проверки:
+
+- T-Invest fill без какого-либо in-memory order context;
+- ранний fill до сохранения ответа и fill сразу после закрытия/повторного
+  открытия SQLite, без reconciliation;
+- duplicate replay без повторного изменения position и commission;
+- per-strategy trading day, включая UTC boundary;
+- неизвестные/конфликтующие IDs, другой account/instrument/side;
+- terminal order остаётся доступен для атрибуции; существующий сценарий позднего
+  fill для failed strategy сохранён;
+- несогласованные account в persisted state и rollback неверного resolution.
+
+Пройдены полный `go test -count=1 -timeout 60s ./...`, `go vet ./...` и
+`go test -race -count=1 -timeout 90s` для agent, SQLite, exchange (включая fake и
+T-Invest) и CLI. Повторный `sqlc generate` не изменяет generated files
+(проверены SHA-256 до/после). Sandbox API не вызывался.
+
+Критерий выполнен для fills, владелец которых определяется из durable state.
+Неизвестное владение или ошибка обязательного `GetOrderState` всё ещё требуют
+fail closed/recovery. Следующий пункт рефакторинга — R7; основной sandbox
+milestone не считается закрытым локальными тестами.
 
 ### R7. Один контракт stream supervision
 

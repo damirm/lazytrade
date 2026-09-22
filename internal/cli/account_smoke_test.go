@@ -18,7 +18,7 @@ type smokeStub struct {
 	instrument    domain.Instrument
 	position      decimal.Decimal
 	orders        map[domain.OrderID]domain.Order
-	stream        chan domain.Execution
+	stream        chan exchange.Execution
 	streamErrors  chan error
 	placeCount    int
 	failPlaceCall int
@@ -39,7 +39,7 @@ func newSmokeStub(t *testing.T) *smokeStub {
 			ID: "instrument", Symbol: "TEST", BaseAsset: "TEST", QuoteAsset: "RUB", SettlementAsset: "RUB",
 			PriceStep: price, QuantityStep: domain.Quantity{Value: decimal.NewFromInt(1)},
 		},
-		orders: make(map[domain.OrderID]domain.Order), stream: make(chan domain.Execution, 8),
+		orders: make(map[domain.OrderID]domain.Order), stream: make(chan exchange.Execution, 8),
 		streamErrors: make(chan error, 1),
 	}
 }
@@ -89,9 +89,9 @@ func (s *smokeStub) PlaceOrder(_ context.Context, request exchange.NewOrder) (do
 	s.position = s.position.Add(change)
 	price, _ := domain.NewPrice("100", "RUB")
 	commission, _ := domain.NewMoney("1", "RUB")
-	s.stream <- domain.Execution{
+	s.stream <- exchange.Execution{
 		ID: domain.ExecutionID(fmt.Sprintf("execution-%d", s.placeCount)), OrderID: id,
-		StrategyID: request.StrategyID, InstrumentID: request.InstrumentID, Side: request.Side,
+		ClientOrderID: request.ClientOrderID, InstrumentID: request.InstrumentID, Side: request.Side,
 		Quantity: request.Quantity, Price: price, Commission: commission, ExecutedAt: now,
 	}
 	return order, nil

@@ -40,6 +40,19 @@ type IntentLookupStore interface {
 	GetOrderIntentByClientOrderID(context.Context, domain.ClientOrderID) (OrderIntent, error)
 }
 
+// ExecutionOwnerStore resolves fills against durable intent/order identity,
+// including an intent whose PlaceOrder response has not been saved yet.
+// Conflicting identifiers must fail, even when one of them matches.
+type ExecutionOwnerStore interface {
+	FindExecutionOwner(context.Context, domain.ExchangeAccountID, domain.OrderID, domain.ClientOrderID) (ExecutionOwner, error)
+}
+
+type ExecutionOwner struct {
+	StrategyID   domain.StrategyID
+	InstrumentID domain.InstrumentID
+	Side         domain.OrderSide
+}
+
 type AuditStore interface {
 	AppendAudit(context.Context, AuditEvent) error
 	ListAudit(context.Context, uint32) ([]AuditEvent, error)

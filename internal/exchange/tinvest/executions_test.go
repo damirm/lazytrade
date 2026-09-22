@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/damirm/lazytrade/internal/domain"
 	"github.com/shopspring/decimal"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	pb "opensource.tbank.ru/invest/invest-go/proto"
@@ -36,11 +35,12 @@ func (o *tradesOpenerStub) OpenTrades(_ context.Context, request *pb.TradesStrea
 	return o.receiver, nil
 }
 
-func TestSubscribeExecutionsMapsTradeAndActualCommission(t *testing.T) {
+func TestSubscribeExecutionsMapsTradeWithoutInMemoryOrderContext(t *testing.T) {
 	executedAt := time.Date(2026, 7, 29, 10, 30, 0, 0, time.UTC)
 	sandbox := &sandboxStub{stateResponse: &pb.OrderState{
 		OrderId: "order-1", InstrumentUid: "instrument", LotsExecuted: 2,
 		OrderRequestId:     "client-1",
+		Direction:          pb.OrderDirection_ORDER_DIRECTION_BUY,
 		ExecutedCommission: &pb.MoneyValue{Units: 2, Currency: "rub"},
 	}}
 	opener := &tradesOpenerStub{receiver: &tradesReceiverStub{responses: []*pb.TradesStreamResponse{{
@@ -55,9 +55,6 @@ func TestSubscribeExecutionsMapsTradeAndActualCommission(t *testing.T) {
 	}}}}
 	adapter := orderTestAdapter(sandbox)
 	adapter.orderStream = opener
-	adapter.registerClientOrderContext("client-1", executionOrderContext{
-		StrategyID: "ma", InstrumentID: "instrument", Side: domain.OrderSideBuy,
-	})
 
 	stream, err := adapter.SubscribeExecutions(context.Background(), "sandbox-account")
 	if err != nil {
@@ -67,7 +64,7 @@ func TestSubscribeExecutionsMapsTradeAndActualCommission(t *testing.T) {
 	if !ok {
 		t.Fatal("execution stream closed without a trade")
 	}
-	if execution.ID != "trade-1" || execution.StrategyID != "ma" ||
+	if execution.ID != "trade-1" || execution.ClientOrderID != "client-1" || execution.InstrumentID != "instrument" ||
 		!execution.Quantity.Value.Equal(decimal.NewFromInt(10)) ||
 		!execution.Commission.Amount.Equal(decimal.NewFromInt(1)) {
 		t.Fatalf("mapped execution = %+v", execution)
@@ -86,11 +83,11 @@ func TestSubscribeExecutionsMapsTradeAndActualCommission(t *testing.T) {
 	}
 }
 
-func TestSubscribeExecutionsFailsClosedForUnknownOrder(t *testing.T) {
+func TestSubscribeExecutionsFailsClosedForMissingOrderState(t *testing.T) {
 	sandbox := &sandboxStub{}
 	opener := &tradesOpenerStub{receiver: &tradesReceiverStub{responses: []*pb.TradesStreamResponse{{
 		Payload: &pb.TradesStreamResponse_OrderTrades{OrderTrades: &pb.OrderTrades{
-			OrderId: "unknown-order", Trades: []*pb.OrderTrade{{TradeId: "trade-1"}},
+			OrderId: "unknown-order", AccountId: "broker-account", Trades: []*pb.OrderTrade{{TradeId: "trade-1"}},
 		}},
 	}}}}
 	adapter := orderTestAdapter(sandbox)
@@ -100,7 +97,50 @@ func TestSubscribeExecutionsFailsClosedForUnknownOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := <-stream.Errors; err == nil {
-		t.Fatal("unknown order did not stop the execution stream")
+		t.Fatal("missing order state did not stop the execution stream")
+	}
+}
+
+func TestMapOrderTradesValidatesExchangeIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		change    func(*pb.OrderTrades, *pb.OrderState)
+		wantError bool
+	}{
+		{"valid without client ID", func(_ *pb.OrderTrades, s *pb.OrderState) { s.OrderRequestId = "" }, false},
+		{"foreign account", func(e *pb.OrderTrades, _ *pb.OrderState) { e.AccountId = "other" }, true},
+		{"wrong order", func(_ *pb.OrderTrades, s *pb.OrderState) { s.OrderId = "other" }, true},
+		{"wrong instrument", func(_ *pb.OrderTrades, s *pb.OrderState) { s.InstrumentUid = "other" }, true},
+		{"missing instrument", func(e *pb.OrderTrades, s *pb.OrderState) { e.InstrumentUid = ""; s.InstrumentUid = "" }, true},
+		{"unknown direction", func(e *pb.OrderTrades, _ *pb.OrderState) { e.Direction = pb.OrderDirection(999) }, true},
+		{"wrong direction", func(_ *pb.OrderTrades, s *pb.OrderState) { s.Direction = pb.OrderDirection_ORDER_DIRECTION_SELL }, true},
+		{"missing timestamp", func(e *pb.OrderTrades, _ *pb.OrderState) { e.Trades[0].DateTime = nil }, true},
+		{"invalid timestamp", func(e *pb.OrderTrades, _ *pb.OrderState) { e.Trades[0].DateTime.Nanos = -1 }, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := &pb.OrderState{
+				OrderId: "order-1", OrderRequestId: "client-1", InstrumentUid: "instrument",
+				Direction: pb.OrderDirection_ORDER_DIRECTION_BUY, LotsExecuted: 1,
+				ExecutedCommission: &pb.MoneyValue{Units: 1, Currency: "rub"},
+			}
+			trades := &pb.OrderTrades{
+				OrderId: "order-1", AccountId: "broker-account", InstrumentUid: "instrument",
+				Direction: pb.OrderDirection_ORDER_DIRECTION_BUY,
+				Trades: []*pb.OrderTrade{{
+					TradeId: "trade-1", Quantity: 10, Price: &pb.Quotation{Units: 100},
+					DateTime: timestamppb.New(time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)),
+				}},
+			}
+			test.change(trades, state)
+			adapter := orderTestAdapter(&sandboxStub{stateResponse: state})
+			fills, err := adapter.mapOrderTrades(context.Background(), trades)
+			if (err != nil) != test.wantError {
+				t.Fatalf("fills = %+v, error = %v", fills, err)
+			}
+			if err == nil && (len(fills) != 1 || fills[0].ClientOrderID != "") {
+				t.Fatalf("fill with optional client ID = %+v", fills)
+			}
+		})
 	}
 }
 

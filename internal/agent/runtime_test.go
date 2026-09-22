@@ -582,8 +582,13 @@ func seedPendingSignal(t *testing.T) (*sqlite.Store, *strategy.Worker, domain.Si
 
 func seedPendingSignalValues(t *testing.T, closes []int64) (*sqlite.Store, *strategy.Worker, domain.Signal) {
 	t.Helper()
+	return seedPendingSignalValuesAtPath(t, closes, filepath.Join(t.TempDir(), "pending.db"))
+}
+
+func seedPendingSignalValuesAtPath(t *testing.T, closes []int64, path string) (*sqlite.Store, *strategy.Worker, domain.Signal) {
+	t.Helper()
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "pending.db"))
+	store, err := sqlite.Open(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}

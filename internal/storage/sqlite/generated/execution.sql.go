@@ -38,6 +38,62 @@ func (q *Queries) AdvanceOrderCommission(ctx context.Context, arg AdvanceOrderCo
 	return result.RowsAffected()
 }
 
+const findExecutionOwners = `-- name: FindExecutionOwners :many
+SELECT oi.strategy_id, oi.instrument_id, oi.side, oi.client_order_id,
+       o.exchange_order_id, o.exchange_account_id AS order_account_id
+FROM order_intents oi
+LEFT JOIN orders o ON o.order_intent_id = oi.id
+WHERE oi.exchange_account_id = ?1
+  AND (o.exchange_order_id = ?2
+       OR oi.client_order_id = ?3)
+LIMIT 2
+`
+
+type FindExecutionOwnersParams struct {
+	AccountID     string         `json:"account_id"`
+	OrderID       sql.NullString `json:"order_id"`
+	ClientOrderID string         `json:"client_order_id"`
+}
+
+type FindExecutionOwnersRow struct {
+	StrategyID      string         `json:"strategy_id"`
+	InstrumentID    string         `json:"instrument_id"`
+	Side            int64          `json:"side"`
+	ClientOrderID   string         `json:"client_order_id"`
+	ExchangeOrderID sql.NullString `json:"exchange_order_id"`
+	OrderAccountID  sql.NullString `json:"order_account_id"`
+}
+
+func (q *Queries) FindExecutionOwners(ctx context.Context, arg FindExecutionOwnersParams) ([]FindExecutionOwnersRow, error) {
+	rows, err := q.db.QueryContext(ctx, findExecutionOwners, arg.AccountID, arg.OrderID, arg.ClientOrderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FindExecutionOwnersRow{}
+	for rows.Next() {
+		var i FindExecutionOwnersRow
+		if err := rows.Scan(
+			&i.StrategyID,
+			&i.InstrumentID,
+			&i.Side,
+			&i.ClientOrderID,
+			&i.ExchangeOrderID,
+			&i.OrderAccountID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findOrderForCommission = `-- name: FindOrderForCommission :one
 SELECT o.id, oi.strategy_id
 FROM orders o
@@ -222,6 +278,17 @@ func (q *Queries) GetOrderCommission(ctx context.Context, orderID string) (Order
 		&i.ObservedAt,
 	)
 	return i, err
+}
+
+const getOrderIntentAccount = `-- name: GetOrderIntentAccount :one
+SELECT exchange_account_id FROM order_intents WHERE id = ?
+`
+
+func (q *Queries) GetOrderIntentAccount(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getOrderIntentAccount, id)
+	var exchange_account_id string
+	err := row.Scan(&exchange_account_id)
+	return exchange_account_id, err
 }
 
 const getOrderIntentByClientOrderID = `-- name: GetOrderIntentByClientOrderID :one

@@ -46,7 +46,9 @@ status и malformed success response трактуются как `UnknownOutcome
 Execution stream не обновляет projections напрямую:
 
 ```text
-exchange execution
+exchange.Execution (без strategy ID)
+  -> FindExecutionOwner(account, order ID, optional client order ID)
+  -> domain.Execution (с владельцем из БД)
   -> StageExecution(execution_inbox, pending)
   -> ApplyStagedExecution transaction
        order fill projection
@@ -54,6 +56,32 @@ exchange execution
        P&L/statistics
        inbox status=applied
 ```
+
+Владение исполнением определяется в application/storage, не в T-Invest
+adapter. Адаптер отдаёт биржевой order ID, client order ID (если доступен),
+instrument и side. Runtime ищет intent/order только внутри текущего логического
+exchange account и проверяет совпадение instrument/side. Два переданных ID
+обязаны указывать на один intent; совпадения только одного недостаточно, если
+другой противоречит сохранённому order. `OrderContextRegistrar` и in-memory
+карты атрибуции удалены.
+
+После рестарта сохранённого exchange order ID достаточно для атрибуции, даже
+до reconciliation. Во время `PlaceOrder` fill можно привязать по client ID из
+уже сохранённого intent и записать в inbox до сохранения ответа на заявку.
+Применение проекций всё ещё требует локальный order: до его recovery запись
+остаётся pending. Стратегия с ошибкой также остаётся владельцем своих поздних
+fills; список работающих workers не является источником владения.
+
+Неизвестные или противоречивые идентификаторы приводят к fail closed, а не к
+угадыванию стратегии по instrument или игнорированию исполнения. Такой fill не
+проходит staging: дальнейшая диагностика/recovery обязательна. Отсутствие client
+ID допустимо только если exchange order уже известен локально. T-Invest по-прежнему
+читает `GetOrderState` для client ID и комиссии; недоступность/некорректность
+этого read также останавливает ingress. Это не offline-гарантия обработки fill.
+
+Предварительная регистрация всех contexts до открытия stream отвергнута в R6:
+она сохранила бы второй источник владения в памяти и зависимость от порядка
+startup. Durable lookup заменил этот механизм напрямую, без переходного пути.
 
 Дедупликация использует exchange account, source family и dedupe key.
 Повторная доставка fill безопасна. При старте все pending inbox entries

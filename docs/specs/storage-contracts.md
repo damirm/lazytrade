@@ -308,6 +308,34 @@ network submit запрещён до resolution/reconciliation. Exchange order I
 
 ## 8. Атомарное применение fill
 
+### Текущая реализация: durable attribution и inbox
+
+Live ingress использует `storage.ExecutionOwnerStore.FindExecutionOwner(ctx,
+accountID, orderID, clientOrderID)` до `StageExecution`. Результат содержит
+strategy ID, instrument ID и side из локального intent. Поиск ограничен
+exchange account и учитывает как открытые, так и terminal orders. Client ID
+optional; при отсутствии локального order он позволяет найти durable intent
+до сохранения ответа `PlaceOrder`.
+
+Не найдено ни одного intent — `ErrNotFound`; два ID указывают на разные intents
+либо расходятся с сохранённым order — `ErrConflict`. Несовпадение account между
+order и intent также отклоняется при lookup; `ResolveOrderIntent` проверяет
+это до записи order и атомарно откатывает resolution при конфликте.
+Нельзя выбирать первого
+совпавшего кандидата или искать владельца только по instrument. Runtime
+проверяет instrument/side и передаёт атрибутированный `domain.Execution` в
+inbox вместе с per-strategy trading day.
+
+Канонический write path — `StageExecution -> ApplyStagedExecution`. Inbox не
+имеет FK на order: stage разрешён до появления локального order, apply в этом
+случае возвращает `ErrNotFound` и оставляет pending entry. Новая schema migration
+для атрибуции не нужна: используются существующие `order_intents` и `orders`.
+
+### Целевая детализация транзакции
+
+Ниже описана семантика atomic apply; `FillStore` — проектный эскиз, не отдельный
+текущий путь записи в обход inbox.
+
 Fill является наиболее важной write-транзакцией:
 
 ```go

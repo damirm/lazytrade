@@ -143,6 +143,13 @@ func (s *Store) ResolveOrderIntent(ctx context.Context, resolution storage.Inten
 		if resolution.Order.OrderIntentID != resolution.IntentID {
 			return errors.New("sqlite: exchange order belongs to another intent")
 		}
+		accountID, err := q.GetOrderIntentAccount(ctx, resolution.IntentID)
+		if err != nil {
+			return fmt.Errorf("sqlite: get resolved intent account: %w", err)
+		}
+		if accountID != string(resolution.Order.ExchangeAccountID) {
+			return fmt.Errorf("sqlite: exchange order and intent accounts disagree: %w", storage.ErrConflict)
+		}
 		if err := q.InsertExchangeOrder(ctx, params); err != nil {
 			return fmt.Errorf("sqlite: insert exchange order: %w", storage.ErrConflict)
 		}
