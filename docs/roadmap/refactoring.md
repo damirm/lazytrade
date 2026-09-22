@@ -248,14 +248,16 @@ milestone не считается закрытым локальными тест
 detector. Реальный sandbox API не вызывался; основной round-trip milestone
 остаётся открытым. Следующий пункт рефакторинга — R8.
 
-Отложенное дополнительное покрытие: отдельные lifecycle tests для mapper
-failure → RPC cancellation и cancellation заблокированного `Send`. Это не
-меняет следующий пункт roadmap.
+Покрытие mapper failure → RPC cancellation добавлено в R8. Отдельный тест
+cancellation заблокированного `Send` остаётся отложенным; это не меняет
+следующий пункт roadmap.
 
 Полноценный reconnect можно вернуть отдельным решением только вместе с
 `degraded` state, запретом новых сигналов во время разрыва и soak tests.
 
 ### R8. Строгий mapping внешних данных T-Invest
+
+Статус: завершён.
 
 Работы:
 
@@ -266,6 +268,26 @@ failure → RPC cancellation и cancellation заблокированного `S
 5. Добавить тесты на unknown enum, nil quotation и nil timestamp.
 
 Критерий: неизвестные или неполные внешние данные обрабатываются fail closed.
+
+Реализовано: строгие enum mappers для order, public trade и trading status;
+общая проверка обязательного protobuf timestamp без подстановки текущего
+времени; детерминированные OHLC mapping и `NewOrder.Validate`. Удалён дубликат
+order type mapper в history. Некорректный ответ `PostOrder` сохраняет
+`UnknownOutcome` и не вызывает повторную отправку.
+
+Регрессии покрывают unknown/unspecified enum, nil quotation/response/record,
+nil/invalid/zero timestamp, совпадающие указатели OHLC, порядок ошибок и
+mapping failure → отмена market RPC. Обработка корректных данных сохранена.
+Текущий контракт описан в
+[`tinvest-adapter-design.md`](../specs/tinvest-adapter-design.md#5-деньги-цены-и-количества).
+
+Полный прогон тестов, релевантный race detector, `go vet ./...` и `go build ./...`
+пройдены. Независимое ревью подтвердило соответствие плану и качество кода;
+блокирующих замечаний нет. Mapping failure/cancellation и порядок ошибок OHLC
+дополнительно проверены 20 повторами с race detector.
+Реальный sandbox не вызывался: round-trip milestone остаётся открытым.
+Следующий пункт рефакторинга — R9; broker ACK validation остаётся отложенной
+возможностью, а не новым следующим этапом.
 
 ### R9. Разделение обязанностей runtime
 

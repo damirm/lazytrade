@@ -32,6 +32,8 @@ T-Invest sandbox. Production trading намеренно выключен.
 - Startup recovery: unresolved intents, history scan, execution inbox drain и
   reconciliation до перехода стратегий в `running`.
 - Read-only API retries и conservative mutation `UnknownOutcome` handling.
+- Строгий T-Invest mapping: неизвестные enum и отсутствующее обязательное время
+  отклоняются; OHLC преобразуется детерминированно, без неявных подстановок.
 - Диагностические команды sandbox: account list/create/pay-in/smoke-test,
   agent preflight и history probe.
 

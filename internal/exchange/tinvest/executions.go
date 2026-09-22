@@ -129,9 +129,9 @@ func (a *Adapter) mapOrderTrades(ctx context.Context, trades *pb.OrderTrades) ([
 	if err := instrumentID.Validate(); err != nil || state.GetInstrumentUid() != string(instrumentID) {
 		return nil, fmt.Errorf("execution order %q has an inconsistent instrument", orderID)
 	}
-	if trades.GetDirection() != pb.OrderDirection_ORDER_DIRECTION_BUY &&
-		trades.GetDirection() != pb.OrderDirection_ORDER_DIRECTION_SELL {
-		return nil, errors.New("execution has an invalid direction")
+	side, err := orderSide(trades.GetDirection())
+	if err != nil {
+		return nil, fmt.Errorf("execution direction: %w", err)
 	}
 	if state.GetDirection() != trades.GetDirection() {
 		return nil, errors.New("execution direction disagrees with order state")
@@ -162,18 +162,19 @@ func (a *Adapter) mapOrderTrades(ctx context.Context, trades *pb.OrderTrades) ([
 		if trade.GetDateTime() != nil {
 			executedAt = trade.GetDateTime()
 		}
-		if executedAt == nil || !executedAt.IsValid() {
-			return nil, errors.New("execution time is missing or invalid")
+		timestamp, err := requiredTime(executedAt)
+		if err != nil {
+			return nil, fmt.Errorf("execution time: %w", err)
 		}
 		execution := exchange.Execution{
 			ID: domain.ExecutionID(trade.GetTradeId()), OrderID: orderID,
 			ClientOrderID: domain.ClientOrderID(state.GetOrderRequestId()), InstrumentID: instrumentID,
-			Side: orderSide(trades.GetDirection()), Quantity: domain.Quantity{Value: quantity}, Price: tradePrice,
+			Side: side, Quantity: domain.Quantity{Value: quantity}, Price: tradePrice,
 			Commission: domain.Money{
 				Amount: commission.Amount.Mul(quantity).Div(totalExecuted),
 				Asset:  commission.Asset,
 			},
-			ExecutedAt: executedAt.AsTime().UTC(), ExchangeTrade: trade.GetTradeId(),
+			ExecutedAt: timestamp, ExchangeTrade: trade.GetTradeId(),
 		}
 		if err := execution.Validate(); err != nil {
 			return nil, fmt.Errorf("map execution %q: %w", trade.GetTradeId(), err)

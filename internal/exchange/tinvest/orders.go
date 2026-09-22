@@ -39,6 +39,14 @@ func (a *Adapter) PlaceOrder(ctx context.Context, request exchange.NewOrder) (do
 	if err := a.validateAccount(request.ExchangeAccountID); err != nil {
 		return domain.Order{}, err
 	}
+	direction, err := mapOrderDirection(request.Side)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	apiOrderType, err := mapOrderType(request.Type)
+	if err != nil {
+		return domain.Order{}, err
+	}
 	instrument, err := a.Instrument(ctx, request.InstrumentID)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("place order metadata: %w", err)
@@ -50,7 +58,7 @@ func (a *Adapter) PlaceOrder(ctx context.Context, request exchange.NewOrder) (do
 	apiRequest := &pb.PostOrderRequest{
 		InstrumentId: string(request.InstrumentID), Quantity: lots,
 		AccountId: a.accountID, OrderId: string(request.ClientOrderID),
-		Direction: mapOrderDirection(request.Side), OrderType: mapOrderType(request.Type),
+		Direction: direction, OrderType: apiOrderType,
 	}
 	if request.LimitPrice != nil {
 		apiRequest.Price = decimalQuotation(request.LimitPrice.Value)
@@ -89,8 +97,8 @@ func (a *Adapter) CancelOrder(ctx context.Context, orderID domain.OrderID) error
 	if err != nil {
 		return mapMutationError("cancel order", err)
 	}
-	if response == nil || response.GetTime() == nil || !response.GetTime().IsValid() {
-		return mutationResponseError("map canceled order response", errors.New("response contains no valid cancellation time"))
+	if _, err := requiredTime(response.GetTime()); err != nil {
+		return mutationResponseError("map canceled order response", fmt.Errorf("cancellation time: %w", err))
 	}
 	return nil
 }
@@ -133,6 +141,9 @@ func (a *Adapter) OpenOrders(ctx context.Context, accountID domain.ExchangeAccou
 	if err != nil {
 		return nil, err
 	}
+	if response == nil {
+		return nil, errors.New("orders response is missing")
+	}
 	result := make([]domain.Order, 0, len(response.GetOrders()))
 	for _, state := range response.GetOrders() {
 		order, mapErr := a.mapOrderState(ctx, state)
@@ -153,9 +164,21 @@ func (a *Adapter) mapOrderState(ctx context.Context, state *pb.OrderState) (doma
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("order instrument: %w", err)
 	}
-	submitted := time.Now().UTC()
-	if state.GetOrderDate() != nil {
-		submitted = state.GetOrderDate().AsTime().UTC()
+	submitted, err := requiredTime(state.GetOrderDate())
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("order date: %w", err)
+	}
+	side, err := orderSide(state.GetDirection())
+	if err != nil {
+		return domain.Order{}, err
+	}
+	typ, err := orderType(state.GetOrderType())
+	if err != nil {
+		return domain.Order{}, err
+	}
+	status, err := mapOrderStatus(state.GetExecutionReportStatus())
+	if err != nil {
+		return domain.Order{}, err
 	}
 	var limitPrice *domain.Price
 	if state.GetOrderType() == pb.OrderType_ORDER_TYPE_LIMIT && state.GetInitialSecurityPrice() != nil {
@@ -171,8 +194,8 @@ func (a *Adapter) mapOrderState(ctx context.Context, state *pb.OrderState) (doma
 	order := domain.Order{
 		ID: domain.OrderID(state.GetOrderId()), ClientOrderID: domain.ClientOrderID(state.GetOrderRequestId()),
 		StrategyID: "external", ExchangeAccountID: domain.ExchangeAccountID(a.name),
-		InstrumentID: instrumentID, Side: orderSide(state.GetDirection()), Type: orderType(state.GetOrderType()),
-		Status:         mapOrderStatus(state.GetExecutionReportStatus()),
+		InstrumentID: instrumentID, Side: side, Type: typ,
+		Status:         status,
 		Quantity:       lotsToQuantity(state.GetLotsRequested(), instrument.QuantityStep),
 		FilledQuantity: lotsToQuantity(state.GetLotsExecuted(), instrument.QuantityStep),
 		LimitPrice:     limitPrice, SubmittedAt: submitted, UpdatedAt: submitted,
@@ -184,11 +207,15 @@ func mapPostOrder(response *pb.PostOrderResponse, request exchange.NewOrder, lot
 	if response == nil {
 		return domain.Order{}, errors.New("post order response is missing")
 	}
+	status, err := mapOrderStatus(response.GetExecutionReportStatus())
+	if err != nil {
+		return domain.Order{}, err
+	}
 	order := domain.Order{
 		ID: domain.OrderID(response.GetOrderId()), ClientOrderID: request.ClientOrderID,
 		StrategyID: request.StrategyID, ExchangeAccountID: request.ExchangeAccountID,
 		InstrumentID: request.InstrumentID, Side: request.Side, Type: request.Type,
-		Status:         mapOrderStatus(response.GetExecutionReportStatus()),
+		Status:         status,
 		Quantity:       lotsToQuantity(response.GetLotsRequested(), lotSize),
 		FilledQuantity: lotsToQuantity(response.GetLotsExecuted(), lotSize),
 		LimitPrice:     request.LimitPrice, SubmittedAt: now.UTC(), UpdatedAt: now.UTC(),
@@ -233,47 +260,63 @@ func decimalQuotation(value decimal.Decimal) *pb.Quotation {
 	return &pb.Quotation{Units: units, Nano: int32(nanos)}
 }
 
-func mapOrderDirection(side domain.OrderSide) pb.OrderDirection {
-	if side == domain.OrderSideBuy {
-		return pb.OrderDirection_ORDER_DIRECTION_BUY
+func mapOrderDirection(side domain.OrderSide) (pb.OrderDirection, error) {
+	switch side {
+	case domain.OrderSideBuy:
+		return pb.OrderDirection_ORDER_DIRECTION_BUY, nil
+	case domain.OrderSideSell:
+		return pb.OrderDirection_ORDER_DIRECTION_SELL, nil
+	default:
+		return pb.OrderDirection_ORDER_DIRECTION_UNSPECIFIED, fmt.Errorf("unsupported order side %d", side)
 	}
-	return pb.OrderDirection_ORDER_DIRECTION_SELL
 }
 
-func mapOrderType(value domain.OrderType) pb.OrderType {
-	if value == domain.OrderTypeMarket {
-		return pb.OrderType_ORDER_TYPE_MARKET
+func mapOrderType(value domain.OrderType) (pb.OrderType, error) {
+	switch value {
+	case domain.OrderTypeMarket:
+		return pb.OrderType_ORDER_TYPE_MARKET, nil
+	case domain.OrderTypeLimit:
+		return pb.OrderType_ORDER_TYPE_LIMIT, nil
+	default:
+		return pb.OrderType_ORDER_TYPE_UNSPECIFIED, fmt.Errorf("unsupported order type %d", value)
 	}
-	return pb.OrderType_ORDER_TYPE_LIMIT
 }
 
-func orderSide(value pb.OrderDirection) domain.OrderSide {
-	if value == pb.OrderDirection_ORDER_DIRECTION_BUY {
-		return domain.OrderSideBuy
+func orderSide(value pb.OrderDirection) (domain.OrderSide, error) {
+	switch value {
+	case pb.OrderDirection_ORDER_DIRECTION_BUY:
+		return domain.OrderSideBuy, nil
+	case pb.OrderDirection_ORDER_DIRECTION_SELL:
+		return domain.OrderSideSell, nil
+	default:
+		return 0, fmt.Errorf("unsupported order direction %s", value)
 	}
-	return domain.OrderSideSell
 }
 
-func orderType(value pb.OrderType) domain.OrderType {
-	if value == pb.OrderType_ORDER_TYPE_MARKET {
-		return domain.OrderTypeMarket
+func orderType(value pb.OrderType) (domain.OrderType, error) {
+	switch value {
+	case pb.OrderType_ORDER_TYPE_MARKET:
+		return domain.OrderTypeMarket, nil
+	case pb.OrderType_ORDER_TYPE_LIMIT:
+		return domain.OrderTypeLimit, nil
+	default:
+		return 0, fmt.Errorf("unsupported order type %s", value)
 	}
-	return domain.OrderTypeLimit
 }
 
-func mapOrderStatus(value pb.OrderExecutionReportStatus) domain.OrderStatus {
+func mapOrderStatus(value pb.OrderExecutionReportStatus) (domain.OrderStatus, error) {
 	switch value {
 	case pb.OrderExecutionReportStatus_EXECUTION_REPORT_STATUS_NEW:
-		return domain.OrderStatusAccepted
+		return domain.OrderStatusAccepted, nil
 	case pb.OrderExecutionReportStatus_EXECUTION_REPORT_STATUS_PARTIALLYFILL:
-		return domain.OrderStatusPartiallyFilled
+		return domain.OrderStatusPartiallyFilled, nil
 	case pb.OrderExecutionReportStatus_EXECUTION_REPORT_STATUS_FILL:
-		return domain.OrderStatusFilled
+		return domain.OrderStatusFilled, nil
 	case pb.OrderExecutionReportStatus_EXECUTION_REPORT_STATUS_CANCELLED:
-		return domain.OrderStatusCancelled
+		return domain.OrderStatusCancelled, nil
 	case pb.OrderExecutionReportStatus_EXECUTION_REPORT_STATUS_REJECTED:
-		return domain.OrderStatusRejected
+		return domain.OrderStatusRejected, nil
 	default:
-		return domain.OrderStatusUnknown
+		return 0, fmt.Errorf("unsupported order status %s", value)
 	}
 }

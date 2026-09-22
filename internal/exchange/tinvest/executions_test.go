@@ -111,6 +111,8 @@ func TestMapOrderTradesValidatesExchangeIdentity(t *testing.T) {
 		{"wrong instrument", func(_ *pb.OrderTrades, s *pb.OrderState) { s.InstrumentUid = "other" }, true},
 		{"missing instrument", func(e *pb.OrderTrades, s *pb.OrderState) { e.InstrumentUid = ""; s.InstrumentUid = "" }, true},
 		{"unknown direction", func(e *pb.OrderTrades, _ *pb.OrderState) { e.Direction = pb.OrderDirection(999) }, true},
+		{"unspecified direction", func(e *pb.OrderTrades, s *pb.OrderState) { e.Direction = 0; s.Direction = 0 }, true},
+		{"matching unknown direction", func(e *pb.OrderTrades, s *pb.OrderState) { e.Direction = 999; s.Direction = 999 }, true},
 		{"wrong direction", func(_ *pb.OrderTrades, s *pb.OrderState) { s.Direction = pb.OrderDirection_ORDER_DIRECTION_SELL }, true},
 		{"missing timestamp", func(e *pb.OrderTrades, _ *pb.OrderState) { e.Trades[0].DateTime = nil }, true},
 		{"invalid timestamp", func(e *pb.OrderTrades, _ *pb.OrderState) { e.Trades[0].DateTime.Nanos = -1 }, true},
@@ -161,6 +163,37 @@ func TestSubscribeExecutionsAcceptsValidSubscriptionConfirmation(t *testing.T) {
 		t.Fatal("execution stream did not close after EOF")
 	}
 	awaitTerminalError(t, stream.Errors, "EOF")
+}
+
+func TestMapOrderTradesTimestampPrecedence(t *testing.T) {
+	at := time.Date(2026, 7, 30, 10, 0, 0, 123, time.UTC)
+	for _, test := range []struct {
+		name                 string
+		tradeTime, createdAt *timestamppb.Timestamp
+		wantError            bool
+	}{
+		{"trade time wins", timestamppb.New(at), timestamppb.New(at.Add(time.Hour)), false},
+		{"created at fallback", nil, timestamppb.New(at), false},
+		{"invalid trade time does not fallback", &timestamppb.Timestamp{Nanos: -1}, timestamppb.New(at), true},
+		{"missing both", nil, nil, true},
+		{"invalid created at", nil, &timestamppb.Timestamp{Nanos: -1}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := historyOrder("order-1", "client-1", pb.OrderDirection_ORDER_DIRECTION_SELL, "trade-1", at)
+			trades := &pb.OrderTrades{
+				OrderId: "order-1", AccountId: "broker-account", InstrumentUid: "instrument",
+				Direction: pb.OrderDirection_ORDER_DIRECTION_SELL, CreatedAt: test.createdAt,
+				Trades: []*pb.OrderTrade{{TradeId: "trade-1", Quantity: 10, Price: &pb.Quotation{Units: 100}, DateTime: test.tradeTime}},
+			}
+			fills, err := orderTestAdapter(&sandboxStub{stateResponse: state}).mapOrderTrades(context.Background(), trades)
+			if (err != nil) != test.wantError {
+				t.Fatalf("fills = %+v, error = %v", fills, err)
+			}
+			if err == nil && (len(fills) != 1 || !fills[0].ExecutedAt.Equal(at)) {
+				t.Fatalf("mapped timestamps = %+v", fills)
+			}
+		})
+	}
 }
 
 type contextTradesReceiver struct{ ctx context.Context }

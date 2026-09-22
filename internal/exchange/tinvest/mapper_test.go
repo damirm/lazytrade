@@ -37,6 +37,39 @@ func TestQuotationExact(t *testing.T) {
 	}
 }
 
+func TestKnownTradingStatusesPreserveMapping(t *testing.T) {
+	want := map[pb.SecurityTradingStatus]domain.TradingStatus{
+		pb.SecurityTradingStatus_SECURITY_TRADING_STATUS_NORMAL_TRADING:            domain.TradingStatusOpen,
+		pb.SecurityTradingStatus_SECURITY_TRADING_STATUS_OPENING_PERIOD:            domain.TradingStatusOpening,
+		pb.SecurityTradingStatus_SECURITY_TRADING_STATUS_CLOSING_PERIOD:            domain.TradingStatusClosing,
+		pb.SecurityTradingStatus_SECURITY_TRADING_STATUS_NOT_AVAILABLE_FOR_TRADING: domain.TradingStatusUnavailable,
+		pb.SecurityTradingStatus_SECURITY_TRADING_STATUS_DEALER_NORMAL_TRADING:     domain.TradingStatusUnavailable,
+	}
+	for value := range pb.SecurityTradingStatus_name {
+		if value == 0 {
+			continue
+		}
+		status := pb.SecurityTradingStatus(value)
+		expected, ok := want[status]
+		if !ok {
+			expected = domain.TradingStatusClosed
+		}
+		got, err := mapStatus(status)
+		if err != nil || got != expected {
+			t.Errorf("status %v: got %v, %v; want %v", status, got, err, expected)
+		}
+	}
+}
+
+func TestKnownTradeDirectionsPreserveMapping(t *testing.T) {
+	for value, want := range map[pb.TradeDirection]domain.OrderSide{pb.TradeDirection_TRADE_DIRECTION_BUY: domain.OrderSideBuy, pb.TradeDirection_TRADE_DIRECTION_SELL: domain.OrderSideSell} {
+		got, err := tradeSide(value)
+		if err != nil || got != want {
+			t.Fatalf("direction %v: got %v, %v; want %v", value, got, err, want)
+		}
+	}
+}
+
 func TestMapEveryStreamPayload(t *testing.T) {
 	id := domain.InstrumentID("uid-1")
 	at := timestamppb.New(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))

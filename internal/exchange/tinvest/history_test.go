@@ -89,6 +89,41 @@ func historyOperation(id string, operationType pb.OperationType) *pb.OperationIt
 	return &pb.OperationItem{Id: id, BrokerAccountId: "broker-account", InstrumentUid: "instrument", Type: operationType, State: pb.OperationState_OPERATION_STATE_EXECUTED}
 }
 
+func TestSandboxExecutionHistoryRejectsMalformedOrderMapping(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*pb.OrderState)
+	}{
+		{"unspecified direction", func(s *pb.OrderState) { s.Direction = 0 }},
+		{"unknown direction", func(s *pb.OrderState) { s.Direction = 999 }},
+		{"unspecified type", func(s *pb.OrderState) { s.OrderType = 0 }},
+		{"unknown type", func(s *pb.OrderState) { s.OrderType = 999 }},
+		{"unspecified status", func(s *pb.OrderState) { s.ExecutionReportStatus = 0 }},
+		{"unknown status", func(s *pb.OrderState) { s.ExecutionReportStatus = 999 }},
+		{"missing date", func(s *pb.OrderState) { s.OrderDate = nil }},
+		{"invalid date", func(s *pb.OrderState) { s.OrderDate.Nanos = -1 }},
+		{"missing stage date", func(s *pb.OrderState) { s.Stages[0].ExecutionTime = nil }},
+		{"invalid stage date", func(s *pb.OrderState) { s.Stages[0].ExecutionTime.Nanos = -1 }},
+		{"zero stage date", func(s *pb.OrderState) { s.Stages[0].ExecutionTime = timestamppb.New(time.Time{}) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			from := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
+			state := historyOrder("order-1", "client-1", pb.OrderDirection_ORDER_DIRECTION_SELL, "trade-1", from)
+			test.change(state)
+			stub := &sandboxStub{
+				stateResponse:    state,
+				historyResponses: []*pb.GetOperationsByCursorResponse{{Items: []*pb.OperationItem{historyOperation("operation-1", pb.OperationType_OPERATION_TYPE_SELL)}}},
+			}
+			history, err := orderTestAdapter(stub).ExecutionHistory(context.Background(), exchange.ExecutionHistoryRequest{
+				AccountID: "sandbox-account", From: from, To: from.Add(time.Hour),
+			})
+			if err == nil || history.Complete || len(history.Orders) != 0 {
+				t.Fatalf("malformed history returned %+v, error = %v", history, err)
+			}
+		})
+	}
+}
+
 func historyOrder(id, clientID string, direction pb.OrderDirection, tradeID string, at time.Time) *pb.OrderState {
 	return &pb.OrderState{
 		OrderId: id, OrderRequestId: clientID, InstrumentUid: "instrument", Direction: direction,

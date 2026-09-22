@@ -48,16 +48,22 @@ func (a *Adapter) Candles(ctx context.Context, q CandleQuery) ([]domain.Candle, 
 	if err != nil {
 		return nil, err
 	}
+	if resp == nil {
+		return nil, errors.New("candles response is missing")
+	}
 	result := make([]domain.Candle, 0, len(resp.Candles))
 	for _, c := range resp.Candles {
-		start := utc(c.Time.AsTime())
+		if c == nil {
+			return nil, errors.New("candle is missing")
+		}
+		start, err := requiredTime(c.Time)
+		if err != nil {
+			return nil, fmt.Errorf("candle time: %w", err)
+		}
 		item := domain.Candle{Start: start, End: start.Add(q.Interval), Interval: q.Interval,
 			Volume: domain.Quantity{Value: decimal.NewFromInt(c.Volume)}, Complete: c.IsComplete}
-		for source, target := range map[*pb.Quotation]*domain.Price{c.Open: &item.Open, c.High: &item.High, c.Low: &item.Low, c.Close: &item.Close} {
-			*target, err = price(source, q.Asset)
-			if err != nil {
-				return nil, err
-			}
+		if err := mapOHLC(&item, q.Asset, c.Open, c.High, c.Low, c.Close); err != nil {
+			return nil, err
 		}
 		if err = item.Validate(); err != nil {
 			return nil, err
@@ -79,8 +85,17 @@ func (a *Adapter) LastPrices(ctx context.Context, ids []domain.InstrumentID, ass
 	if err != nil {
 		return nil, err
 	}
+	if resp == nil {
+		return nil, errors.New("last prices response is missing")
+	}
 	result := make(map[domain.InstrumentID]domain.Price, len(resp.LastPrices))
 	for _, item := range resp.LastPrices {
+		if item == nil {
+			return nil, errors.New("last price is missing")
+		}
+		if err := domain.InstrumentID(item.InstrumentUid).Validate(); err != nil {
+			return nil, fmt.Errorf("last price instrument: %w", err)
+		}
 		p, mapErr := price(item.Price, asset)
 		if mapErr != nil {
 			return nil, mapErr
@@ -98,12 +113,18 @@ func (a *Adapter) OrderBook(ctx context.Context, id domain.InstrumentID, asset s
 	if err != nil {
 		return domain.OrderBook{}, err
 	}
+	if resp == nil {
+		return domain.OrderBook{}, errors.New("order book response is missing")
+	}
 	result := domain.OrderBook{Depth: depth}
 	for _, side := range []struct {
 		src []*pb.Order
 		dst *[]domain.OrderBookLevel
 	}{{resp.Bids, &result.Bids}, {resp.Asks, &result.Asks}} {
 		for _, level := range side.src {
+			if level == nil {
+				return domain.OrderBook{}, errors.New("order book level is missing")
+			}
 			p, mapErr := price(level.Price, asset)
 			if mapErr != nil {
 				return result, mapErr
@@ -122,18 +143,16 @@ func (a *Adapter) LastTrades(ctx context.Context, id domain.InstrumentID, asset 
 	if err != nil {
 		return nil, err
 	}
+	if resp == nil {
+		return nil, errors.New("last trades response is missing")
+	}
 	result := make([]domain.MarketTrade, 0, len(resp.Trades))
 	for _, item := range resp.Trades {
-		p, mapErr := price(item.Price, asset)
-		if mapErr != nil {
-			return nil, mapErr
+		trade, _, err := mapTrade(item, asset)
+		if err != nil {
+			return nil, err
 		}
-		side := domain.OrderSideBuy
-		if item.Direction == pb.TradeDirection_TRADE_DIRECTION_SELL {
-			side = domain.OrderSideSell
-		}
-		id := fmt.Sprintf("%s:%d:%d:%s", item.InstrumentUid, item.Time.AsTime().UnixNano(), item.Quantity, item.Direction.String())
-		result = append(result, domain.MarketTrade{ID: id, Price: p, Quantity: domain.Quantity{Value: decimal.NewFromInt(item.Quantity)}, Side: side})
+		result = append(result, trade)
 	}
 	return result, nil
 }
@@ -146,7 +165,10 @@ func (a *Adapter) TradingStatus(ctx context.Context, id domain.InstrumentID) (do
 	if err != nil {
 		return 0, err
 	}
-	return mapStatus(resp.TradingStatus), nil
+	if resp == nil {
+		return 0, errors.New("trading status response is missing")
+	}
+	return mapStatus(resp.TradingStatus)
 }
 
 func (a *Adapter) SubscribeMarketData(ctx context.Context, subscriptions []exchange.Subscription) (exchange.MarketStream, error) {
@@ -242,6 +264,9 @@ func (a *Adapter) receive(ctx context.Context, stream pb.MarketDataStreamService
 		event.ExchangeAccountID = domain.ExchangeAccountID(a.name)
 		event.ReceivedTime = now
 		event.Sequence = sequence.Add(1)
+		if err := event.Validate(); err != nil {
+			return fmt.Errorf("market event: %w", err)
+		}
 		select {
 		case events <- *event:
 		case <-ctx.Done():
@@ -251,6 +276,9 @@ func (a *Adapter) receive(ctx context.Context, stream pb.MarketDataStreamService
 }
 
 func mapStreamResponse(resp *pb.MarketDataResponse, assets map[domain.InstrumentID]string) (*domain.MarketEvent, error) {
+	if resp == nil {
+		return nil, errors.New("market data response is missing")
+	}
 	var event *domain.MarketEvent
 	switch {
 	case resp.GetCandle() != nil:
@@ -260,14 +288,17 @@ func mapStreamResponse(resp *pb.MarketDataResponse, assets map[domain.Instrument
 		if mapErr != nil {
 			return nil, mapErr
 		}
-		start := utc(v.Time.AsTime())
+		start, mapErr := requiredTime(v.Time)
+		if mapErr != nil {
+			return nil, fmt.Errorf("candle time: %w", mapErr)
+		}
 		candle := domain.Candle{Start: start, End: start.Add(interval), Interval: interval,
 			Volume: domain.Quantity{Value: decimal.NewFromInt(v.Volume)}, Complete: true}
-		for source, target := range map[*pb.Quotation]*domain.Price{v.Open: &candle.Open, v.High: &candle.High, v.Low: &candle.Low, v.Close: &candle.Close} {
-			*target, mapErr = price(source, assets[id])
-			if mapErr != nil {
-				return nil, mapErr
-			}
+		if err := mapOHLC(&candle, assets[id], v.Open, v.High, v.Low, v.Close); err != nil {
+			return nil, err
+		}
+		if err := candle.Validate(); err != nil {
+			return nil, err
 		}
 		// A candle-close event becomes observable at the end of its interval.
 		// Using the start here would make live strategy cursors and trading-day
@@ -276,12 +307,19 @@ func mapStreamResponse(resp *pb.MarketDataResponse, assets map[domain.Instrument
 	case resp.GetOrderbook() != nil:
 		v := resp.GetOrderbook()
 		id := domain.InstrumentID(v.InstrumentUid)
+		at, err := requiredTime(v.Time)
+		if err != nil {
+			return nil, fmt.Errorf("order book time: %w", err)
+		}
 		book := domain.OrderBook{Depth: int(v.Depth)}
 		for _, side := range []struct {
 			src []*pb.Order
 			dst *[]domain.OrderBookLevel
 		}{{v.Bids, &book.Bids}, {v.Asks, &book.Asks}} {
 			for _, level := range side.src {
+				if level == nil {
+					return nil, errors.New("order book level is missing")
+				}
 				p, mapErr := price(level.Price, assets[id])
 				if mapErr != nil {
 					return nil, mapErr
@@ -289,37 +327,80 @@ func mapStreamResponse(resp *pb.MarketDataResponse, assets map[domain.Instrument
 				*side.dst = append(*side.dst, domain.OrderBookLevel{Price: p, Quantity: domain.Quantity{Value: decimal.NewFromInt(level.Quantity)}})
 			}
 		}
-		event = &domain.MarketEvent{InstrumentID: id, Kind: domain.MarketEventOrderBook, ExchangeTime: utc(v.Time.AsTime()), OrderBook: &book}
+		if err := book.Validate(); err != nil {
+			return nil, err
+		}
+		event = &domain.MarketEvent{InstrumentID: id, Kind: domain.MarketEventOrderBook, ExchangeTime: at, OrderBook: &book}
 	case resp.GetTrade() != nil:
 		v := resp.GetTrade()
 		id := domain.InstrumentID(v.InstrumentUid)
-		p, mapErr := price(v.Price, assets[id])
-		if mapErr != nil {
-			return nil, mapErr
+		trade, at, err := mapTrade(v, assets[id])
+		if err != nil {
+			return nil, err
 		}
-		side := domain.OrderSideBuy
-		if v.Direction == pb.TradeDirection_TRADE_DIRECTION_SELL {
-			side = domain.OrderSideSell
-		}
-		trade := domain.MarketTrade{ID: fmt.Sprintf("%s:%d:%d:%s", id, v.Time.AsTime().UnixNano(), v.Quantity, v.Direction.String()),
-			Price: p, Quantity: domain.Quantity{Value: decimal.NewFromInt(v.Quantity)}, Side: side}
-		event = &domain.MarketEvent{InstrumentID: id, Kind: domain.MarketEventTrade, ExchangeTime: utc(v.Time.AsTime()), Trade: &trade}
+		event = &domain.MarketEvent{InstrumentID: id, Kind: domain.MarketEventTrade, ExchangeTime: at, Trade: &trade}
 	case resp.GetLastPrice() != nil:
 		v := resp.GetLastPrice()
 		id := domain.InstrumentID(v.InstrumentUid)
+		at, err := requiredTime(v.Time)
+		if err != nil {
+			return nil, fmt.Errorf("last price time: %w", err)
+		}
 		p, mapErr := price(v.Price, assets[id])
 		if mapErr != nil {
 			return nil, mapErr
 		}
-		event = &domain.MarketEvent{InstrumentID: id, Kind: domain.MarketEventLastPrice, ExchangeTime: utc(v.Time.AsTime()), LastPrice: &p}
+		event = &domain.MarketEvent{InstrumentID: id, Kind: domain.MarketEventLastPrice, ExchangeTime: at, LastPrice: &p}
 	case resp.GetTradingStatus() != nil:
 		v := resp.GetTradingStatus()
-		status := mapStatus(v.TradingStatus)
-		event = &domain.MarketEvent{InstrumentID: domain.InstrumentID(v.InstrumentUid), Kind: domain.MarketEventTradingStatus, ExchangeTime: utc(v.Time.AsTime()), TradingStatus: &status}
+		status, err := mapStatus(v.TradingStatus)
+		if err != nil {
+			return nil, err
+		}
+		at, err := requiredTime(v.Time)
+		if err != nil {
+			return nil, fmt.Errorf("trading status time: %w", err)
+		}
+		event = &domain.MarketEvent{InstrumentID: domain.InstrumentID(v.InstrumentUid), Kind: domain.MarketEventTradingStatus, ExchangeTime: at, TradingStatus: &status}
 	default:
+		switch resp.Payload.(type) {
+		case nil, *pb.MarketDataResponse_Candle, *pb.MarketDataResponse_Orderbook,
+			*pb.MarketDataResponse_Trade, *pb.MarketDataResponse_LastPrice, *pb.MarketDataResponse_TradingStatus:
+			return nil, errors.New("market data payload is missing")
+		}
+		// Subscription acknowledgements and pings do not carry market events.
 		return nil, nil
 	}
+	if err := event.InstrumentID.Validate(); err != nil {
+		return nil, fmt.Errorf("market event instrument: %w", err)
+	}
 	return event, nil
+}
+
+func mapTrade(value *pb.Trade, asset string) (domain.MarketTrade, time.Time, error) {
+	if value == nil {
+		return domain.MarketTrade{}, time.Time{}, errors.New("trade is missing")
+	}
+	if err := domain.InstrumentID(value.InstrumentUid).Validate(); err != nil {
+		return domain.MarketTrade{}, time.Time{}, fmt.Errorf("trade instrument: %w", err)
+	}
+	at, err := requiredTime(value.Time)
+	if err != nil {
+		return domain.MarketTrade{}, time.Time{}, fmt.Errorf("trade time: %w", err)
+	}
+	side, err := tradeSide(value.Direction)
+	if err != nil {
+		return domain.MarketTrade{}, time.Time{}, err
+	}
+	p, err := price(value.Price, asset)
+	if err != nil {
+		return domain.MarketTrade{}, time.Time{}, err
+	}
+	trade := domain.MarketTrade{
+		ID:    fmt.Sprintf("%s:%d:%d:%s", value.InstrumentUid, at.UnixNano(), value.Quantity, value.Direction.String()),
+		Price: p, Quantity: domain.Quantity{Value: decimal.NewFromInt(value.Quantity)}, Side: side,
+	}
+	return trade, at, trade.Validate()
 }
 
 func streamCandleInterval(interval pb.SubscriptionInterval) (time.Duration, error) {

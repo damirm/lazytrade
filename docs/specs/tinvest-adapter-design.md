@@ -229,6 +229,40 @@ async/replace/stop расширяют state machine и должны добавл
 
 ## 5. Деньги, цены и количества
 
+### Реализованная граница mapping (R8)
+
+Потребляемые enum-поля order side/type/status, public trade direction и
+trading status преобразуются через `(value, error)`. `UNSPECIFIED` и неизвестные
+значения возвращают ошибку, а не превращаются в sell, limit, buy, closed или
+доменный `OrderStatusUnknown`. Значения известных торговых статусов сохраняют
+прежнюю семантику: normal trading — open; opening/closing period — соответствующая
+фаза; not available/dealer normal — unavailable; остальные известные — closed.
+
+Обязательное биржевое время свечей, streaming market data, публичных сделок,
+order state и executions проверяется до `AsTime`: nil, некорректные seconds/nanos
+и нулевое Go-время запрещены. Отсутствующий `OrderDate` больше не подменяется
+текущим временем. Для execution сохраняется контракт `trade.DateTime`, а при
+его отсутствии — `OrderTrades.CreatedAt`; некорректное присутствующее
+`DateTime` не заменяется временем контейнера.
+
+OHLC преобразуется в порядке open → high → low → close без map с указателями
+в ключах. Ошибки содержат имя поля; одинаковый protobuf pointer у нескольких
+полей не приводит к потере значения. Market payloads проходят доменную
+валидацию. Nil unary market/order responses и отсутствующие записи возвращают
+ошибку вместо panic или пустого успешного результата. Ошибка market mapping
+завершает one-shot stream и отменяет RPC до restart/recovery.
+
+`PostOrder` по-прежнему берёт side/type из валидированного исходного запроса,
+а локальное время ответа — как время наблюдения: в ответе нет `OrderDate`.
+Некорректный потребляемый status успешного ответа означает `UnknownOutcome`,
+не доказанный отказ и не повод повторять mutation. R8 не вводит проверку всех
+неиспользуемых полей protobuf и не реализует subscription ACK validation.
+
+`NewOrder.Validate` возвращает первую ошибку идентификатора в фиксированном
+порядке: client order → strategy → exchange account → instrument.
+
+### Числовой контракт
+
 Proto:
 
 ```text

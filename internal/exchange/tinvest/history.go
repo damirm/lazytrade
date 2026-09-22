@@ -132,7 +132,11 @@ func (a *Adapter) recoverOperation(ctx context.Context, item *pb.OperationItem) 
 	if item.GetInstrumentUid() != "" && item.GetInstrumentUid() != string(instrumentID) {
 		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history operation %s changed instrument", item.GetId())
 	}
-	if orderSide(state.GetDirection()) != wantSide {
+	side, err := orderSide(state.GetDirection())
+	if err != nil {
+		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history direction: %w", err)
+	}
+	if side != wantSide {
 		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history operation %s changed direction", item.GetId())
 	}
 	instrument, err := a.Instrument(ctx, instrumentID)
@@ -143,24 +147,37 @@ func (a *Adapter) recoverOperation(ctx context.Context, item *pb.OperationItem) 
 	if err != nil {
 		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history commission: %w", err)
 	}
-	status := mapOrderStatus(state.GetExecutionReportStatus())
-	if status == domain.OrderStatusUnknown || status == domain.OrderStatusPending ||
-		state.GetOrderDate() == nil || !state.GetOrderDate().IsValid() || state.GetLotsRequested() <= 0 ||
-		(state.GetOrderType() != pb.OrderType_ORDER_TYPE_MARKET && state.GetOrderType() != pb.OrderType_ORDER_TYPE_LIMIT) {
+	status, err := mapOrderStatus(state.GetExecutionReportStatus())
+	if err != nil {
+		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history status: %w", err)
+	}
+	typ, err := orderType(state.GetOrderType())
+	if err != nil {
+		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history type: %w", err)
+	}
+	submitted, err := requiredTime(state.GetOrderDate())
+	if err != nil {
+		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history order date: %w", err)
+	}
+	if state.GetLotsRequested() <= 0 {
 		return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history order %s has invalid state", orderID)
 	}
 	snapshot := exchange.RecoveredOrderSnapshot{
 		ExchangeOrderID: orderID, ClientOrderID: clientID, InstrumentID: instrumentID, Side: wantSide,
-		OrderType:         mapOrderTypeFromProto(state.GetOrderType()),
+		OrderType:         typ,
 		RequestedQuantity: lotsToQuantity(state.GetLotsRequested(), instrument.QuantityStep),
-		Status:            status, SubmittedAt: state.GetOrderDate().AsTime().UTC(),
+		Status:            status, SubmittedAt: submitted,
 		CumulativeCommission: commission, Complete: historyOrderComplete(state.GetExecutionReportStatus()),
 	}
 	seenTrades := make(map[string]struct{}, len(state.GetStages()))
 	var stageLots int64
 	for _, stage := range state.GetStages() {
-		if stage == nil || stage.GetTradeId() == "" || stage.GetQuantity() <= 0 || stage.GetExecutionTime() == nil || !stage.GetExecutionTime().IsValid() {
+		if stage == nil || stage.GetTradeId() == "" || stage.GetQuantity() <= 0 {
 			return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history order %s has invalid stage", orderID)
+		}
+		executedAt, err := requiredTime(stage.GetExecutionTime())
+		if err != nil {
+			return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history stage time: %w", err)
 		}
 		if _, duplicate := seenTrades[stage.GetTradeId()]; duplicate {
 			return exchange.RecoveredOrderSnapshot{}, fmt.Errorf("sandbox execution history order %s repeats trade %s", orderID, stage.GetTradeId())
@@ -177,7 +194,7 @@ func (a *Adapter) recoverOperation(ctx context.Context, item *pb.OperationItem) 
 		stagePrice := domain.Price{Value: stageMoney.Amount, Asset: stageMoney.Asset}
 		snapshot.Fills = append(snapshot.Fills, exchange.RecoveredExecutionFill{
 			TradeID: stage.GetTradeId(), Quantity: lotsToQuantity(stage.GetQuantity(), instrument.QuantityStep),
-			Price: stagePrice, ExecutedAt: stage.GetExecutionTime().AsTime().UTC(),
+			Price: stagePrice, ExecutedAt: executedAt,
 		})
 	}
 	if state.GetLotsExecuted() > 0 && len(snapshot.Fills) == 0 {
@@ -215,13 +232,6 @@ func sameRecoveredOrder(a, b exchange.RecoveredOrderSnapshot) bool {
 		}
 	}
 	return true
-}
-
-func mapOrderTypeFromProto(value pb.OrderType) domain.OrderType {
-	if value == pb.OrderType_ORDER_TYPE_MARKET {
-		return domain.OrderTypeMarket
-	}
-	return domain.OrderTypeLimit
 }
 
 var _ exchange.ExecutionHistoryProvider = (*Adapter)(nil)

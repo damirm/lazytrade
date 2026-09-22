@@ -73,14 +73,17 @@ type NewOrder struct {
 }
 
 func (o NewOrder) Validate() error {
-	for name, err := range map[string]error{
-		"client order ID":     o.ClientOrderID.Validate(),
-		"strategy ID":         o.StrategyID.Validate(),
-		"exchange account ID": o.ExchangeAccountID.Validate(),
-		"instrument ID":       o.InstrumentID.Validate(),
+	for _, field := range []struct {
+		name string
+		err  error
+	}{
+		{"client order ID", o.ClientOrderID.Validate()},
+		{"strategy ID", o.StrategyID.Validate()},
+		{"exchange account ID", o.ExchangeAccountID.Validate()},
+		{"instrument ID", o.InstrumentID.Validate()},
 	} {
-		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+		if field.err != nil {
+			return fmt.Errorf("%s: %w", field.name, field.err)
 		}
 	}
 	if o.Side != domain.OrderSideBuy && o.Side != domain.OrderSideSell {
