@@ -346,6 +346,9 @@ Parity/error tests покрывают общий контракт. Реальн�
 
 ### R11. Единая подготовка backtest dataset
 
+Статус: реализовано 23 сентября 2026 года. Следующий поддерживающий этап — R12;
+основной milestone реального T-Invest sandbox round trip остаётся открытым.
+
 Проблема: dataset хешируется и читается дважды, что допускает расхождение между
 metadata и реально обработанными данными.
 
@@ -357,6 +360,29 @@ metadata и реально обработанными данными.
 3. Возвращать ошибки разрешения путей вместо silent fallback.
 4. Ограничить timeout финальной persistence операции после cancellation.
 5. Добавить regression test изменения файла между preparation и execution.
+
+Реализация:
+
+1. Приватный `preparedBacktestRun` один раз разрешает абсолютные пути и копирует
+   source CSV в read-only temporary snapshot, вычисляя checksum в том же
+   проходе.
+2. Persisted start, iterator и report используют checksum и байты одного
+   snapshot; отдельное предварительное хеширование source удалено. После
+   итерации checksum сверяется до публикации результата.
+3. Ошибка `filepath.Abs` возвращается вызывающему коду без silent fallback;
+   snapshot освобождается на всех путях выхода.
+4. Любая terminal persistence получает
+   `context.WithTimeout(context.WithoutCancel(executionCtx), timeout)`. Поэтому
+   cancellation исполнения не запрещает записать `cancelled`, но store не может
+   удерживать вызывающий код бесконечно. Execution и persistence errors
+   сохраняются вместе через `errors.Join`.
+5. Регрессии покрывают замену source после preparation, идентичность checksum,
+   cleanup, path error, cancelled terminal state, deadline и объединённые
+   ошибки.
+
+Ограничение: `BacktestStore` обязан соблюдать context. При timeout terminal row
+может остаться `running`; SQLite гарантирует атомарность изменения terminal
+status и manifests артефактов, поэтому частичный terminal result не commit-ится.
 
 ### R12. Удаление оставшегося speculative и legacy кода
 

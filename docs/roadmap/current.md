@@ -24,7 +24,8 @@ T-Invest sandbox. Production trading намеренно выключен.
   `periodic_investment`.
 - Per-strategy `max_daily_loss` и `max_position_value` с явным asset.
 - CSV OHLCV download/validation, deterministic backtest, simulated broker,
-  комиссии, slippage, metrics, JSON report и trades CSV.
+  комиссии, slippage, metrics, JSON report и trades CSV. Каждый run использует
+  один приватный dataset snapshot и bounded terminal persistence.
 - Durable signal state, risk decisions, order intents, execution inbox,
   positions, P&L, cumulative commissions и audit events.
 - Атрибуция streaming fills через durable intent/order, без in-memory contexts
@@ -102,9 +103,10 @@ PostgreSQL, [multi-exchange](multi-exchange.md) и каталог дополни
 R9 разделил приватные фазы startup/recovery и market loop и сгруппировал
 runtime helpers по ответственности без изменения торгового поведения. R10
 объединил открытие sandbox T-Invest в CLI и построение risk/trading-day config
-для live/backtest. Реальный sandbox buy/sell round trip остаётся
-неподтверждённым; следующий фиксированный пункт поддерживающего плана — R11
-(единая подготовка backtest dataset).
+для live/backtest. R11 ввёл один неизменяемый snapshot на backtest run и
+ограничил terminal persistence по времени. Реальный sandbox buy/sell round
+trip остаётся неподтверждённым; следующий фиксированный пункт поддерживающего
+плана — R12 (удаление оставшегося speculative и legacy кода).
 Открытые safety-находки R9 перечислены в
 [trading-runtime.md](../architecture/trading-runtime.md#startup-sequence) и
 не меняют основной порядок работ выше.

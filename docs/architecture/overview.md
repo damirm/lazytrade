@@ -82,6 +82,26 @@ infrastructure adapters:
 - Текущий runtime маршрутизирует события по instrument ID, поэтому один
   инструмент может принадлежать только одной strategy instance.
 
+### Backtest dataset и terminal persistence
+
+- `internal/app` один раз разрешает абсолютные пути run, открывает исходный CSV
+  один раз и при копировании вычисляет SHA-256 приватного временного snapshot.
+  После подготовки runner читает только snapshot; persisted lifecycle и JSON
+  report используют его же checksum. Изменение исходного файла между
+  подготовкой и исполнением не меняет уже начатый run.
+- Manifest и output path разрешаются на той же границе подготовки. Настроенный
+  `dataset_path` остаётся в report в исходной, обычно относительной форме, чтобы
+  артефакт не зависел от машины. Snapshot удаляется после каждого run, включая
+  ошибочные и отменённые исполнения.
+- Любой terminal status (`completed`, `failed`, `cancelled`) записывается с
+  отдельным bounded context: значения исходного execution context сохраняются,
+  его cancellation отсоединяется, а операция ограничена приватным timeout.
+  Реализация `BacktestStore` обязана соблюдать cancellation/deadline context.
+- Если terminal write превысил timeout, durable run может остаться в
+  `running` и требует последующей диагностики или recovery. SQLite не оставляет
+  частичный terminal result: обновление run и manifests артефактов выполняются
+  в одной транзакции и вместе commit либо rollback.
+
 ### Storage
 
 - Текущий driver — SQLite без CGO (`modernc.org/sqlite`).

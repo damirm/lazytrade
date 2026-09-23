@@ -1,6 +1,6 @@
 # Документация lazytrade
 
-Этот каталог описывает фактическое состояние проекта на 22 сентября 2026 года.
+Этот каталог описывает фактическое состояние проекта на 23 сентября 2026 года.
 Документы предназначены прежде всего для разработчиков и автономных агентов.
 Он также является накапливаемой базой знаний: существенные архитектурные
 решения, мотивировка, инварианты, результаты sandbox-проверок и обнаруженные
@@ -29,6 +29,8 @@
 [плане разделения runtime](superpowers/plans/2026-09-22-r9-runtime-split.md).
 [План R10 composition consolidation](superpowers/plans/2026-09-22-r10-composition-consolidation.md)
 фиксирует границы общего sandbox-opener и strategy-risk composition.
+[План R11 prepared backtest dataset](superpowers/plans/2026-09-23-r11-prepared-backtest-dataset.md)
+фиксирует lifecycle приватного snapshot и bounded terminal persistence.
 Принятые архитектурные
 решения хранятся как ADR в [`architecture/adr/`](architecture/adr/README.md),
 а целевые требования — в [`specs/`](specs/README.md).

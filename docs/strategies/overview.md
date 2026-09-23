@@ -82,7 +82,16 @@ events или менять identity occurrence при переносе торг�
 - `data download` получает завершённые свечи T-Invest и создаёт immutable CSV
   с manifest.
 - `data validate` проверяет порядок, интервалы, gaps и checksum.
-- Сеть не используется во время собственно backtest.
+- При подготовке run исходный CSV читается один раз: байты копируются в
+  приватный временный snapshot, а SHA-256 вычисляется в том же проходе.
+  Persisted lifecycle, iterator и report относятся только к этому snapshot и
+  одному checksum; последующая замена исходного файла не меняет run.
+- Runner повторно проверяет checksum после полного чтения snapshot до
+  публикации успешного результата. Snapshot удаляется после каждого run.
+- Producer dataset должен публиковать согласованные CSV и manifest, желательно
+  atomic rename: snapshot защищает исполнение после подготовки, но не пытается
+  синхронизироваться с writer, меняющим файл во время начального копирования.
+- Сеть не используется ни при подготовке, ни во время собственно backtest.
 
 ## Execution model
 
@@ -95,4 +104,3 @@ events или менять identity occurrence при переносе торг�
 
 Backtest — модель, а не доказательство будущей доходности. Изменение fill model
 или event ordering требует golden/reproducibility/no-look-ahead tests.
-

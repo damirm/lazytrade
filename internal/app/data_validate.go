@@ -74,7 +74,7 @@ func ValidateCandleData(ctx context.Context, options ValidateDataOptions) (Valid
 			CandleInterval: manifest.Interval,
 		}},
 	}
-	metadata, err := resolveDatasetMetadata("", inputPath, run, strategy)
+	metadata, err := resolveDatasetMetadata(inputPath, manifestPath, run, strategy)
 	if err != nil {
 		return ValidateDataResult{}, err
 	}

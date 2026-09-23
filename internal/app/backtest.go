@@ -26,7 +26,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const ArtifactSchemaVersion = 1
+const (
+	ArtifactSchemaVersion              = 1
+	backtestTerminalPersistenceTimeout = 5 * time.Second
+)
 
 type BacktestOptions struct {
 	ConfigPath string
@@ -89,14 +92,13 @@ func RunBacktests(ctx context.Context, options BacktestOptions) ([]BacktestResul
 		if err := ctx.Err(); err != nil {
 			return results, err
 		}
+		prepared, err := prepareBacktestRun(options, run, strategies[run.Strategy], len(runs))
+		if err != nil {
+			return results, fmt.Errorf("backtest run %q: %w", run.ID, err)
+		}
 		startedAt := time.Now().UTC()
 		var stored storage.BacktestRun
 		if options.Store != nil {
-			datasetPath := resolvePath(mustAbsoluteDir(options.ConfigPath), run.Data.Path)
-			datasetHash, hashErr := hashFile(datasetPath)
-			if hashErr != nil {
-				return results, fmt.Errorf("backtest run %q dataset checksum: %w", run.ID, hashErr)
-			}
 			version := options.Version
 			if version == "" {
 				version = "dev"
@@ -104,13 +106,18 @@ func RunBacktests(ctx context.Context, options BacktestOptions) ([]BacktestResul
 			stored, err = options.Store.StartBacktestRun(ctx, storage.BacktestRun{
 				ID: executionID(run.ID, configHash, startedAt), ConfiguredRunID: run.ID,
 				StrategyID: run.Strategy, ApplicationVersion: version,
-				ConfigHash: configHash, DatasetChecksum: datasetHash, StartedAt: startedAt,
+				ConfigHash: configHash, DatasetChecksum: prepared.datasetChecksum, StartedAt: startedAt,
 			})
 			if err != nil {
-				return results, fmt.Errorf("start persisted backtest run %q: %w", run.ID, err)
+				cleanupErr := prepared.cleanup()
+				return results, errors.Join(
+					fmt.Errorf("start persisted backtest run %q: %w", run.ID, err),
+					wrapSnapshotCleanupError(run.ID, cleanupErr),
+				)
 			}
 		}
-		result, err := runBacktest(ctx, options, run, strategies[run.Strategy], configHash, len(runs))
+		result, err := runBacktest(ctx, options, prepared, configHash)
+		err = errors.Join(err, wrapSnapshotCleanupError(run.ID, prepared.cleanup()))
 		if options.Store != nil {
 			status, code := storage.BacktestCompleted, ""
 			if err != nil {
@@ -136,7 +143,7 @@ func RunBacktests(ctx context.Context, options BacktestOptions) ([]BacktestResul
 					finish.Metrics, finish.Warnings, finish.Artifacts = nil, nil, nil
 				}
 			}
-			_, finishErr := options.Store.FinishBacktestRun(context.WithoutCancel(ctx), finish)
+			finishErr := finishBacktestRunWithin(ctx, options.Store, finish, backtestTerminalPersistenceTimeout)
 			if finishErr != nil {
 				return results, errors.Join(err, fmt.Errorf("finish persisted backtest run %q: %w", run.ID, finishErr))
 			}
@@ -149,22 +156,22 @@ func RunBacktests(ctx context.Context, options BacktestOptions) ([]BacktestResul
 	return results, nil
 }
 
-func runBacktest(ctx context.Context, options BacktestOptions, run config.BacktestRun, strategyConfig config.StrategyConfig, configHash string, runCount int) (BacktestResult, error) {
-	configDir, err := filepath.Abs(filepath.Dir(options.ConfigPath))
-	if err != nil {
-		return BacktestResult{}, err
-	}
-	dataPath := resolvePath(configDir, run.Data.Path)
-	input, err := os.Open(dataPath)
-	if err != nil {
-		return BacktestResult{}, fmt.Errorf("open dataset: %w", err)
-	}
-	defer input.Close()
+func finishBacktestRunWithin(
+	executionCtx context.Context,
+	store storage.BacktestStore,
+	finish storage.FinishBacktestRun,
+	timeout time.Duration,
+) error {
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(executionCtx), timeout)
+	defer cancel()
+	_, err := store.FinishBacktestRun(finishCtx, finish)
+	return err
+}
 
-	metadata, err := resolveDatasetMetadata(configDir, dataPath, run, strategyConfig)
-	if err != nil {
-		return BacktestResult{}, err
-	}
+func runBacktest(ctx context.Context, options BacktestOptions, prepared *preparedBacktestRun, configHash string) (BacktestResult, error) {
+	run := prepared.run
+	strategyConfig := prepared.strategy
+	metadata := prepared.metadata
 	asset, err := domain.NormalizeAsset(run.Execution.InitialCash.Asset)
 	if err != nil {
 		return BacktestResult{}, err
@@ -183,7 +190,7 @@ func runBacktest(ctx context.Context, options BacktestOptions, run config.Backte
 	}
 	instrumentID := metadata.InstrumentID
 	accountID := domain.ExchangeAccountID(strategyConfig.Exchange)
-	iterator, err := backtest.NewCSVIterator(input, backtest.DatasetMetadata{
+	iterator, err := backtest.NewCSVIterator(prepared.datasetSnapshot, backtest.DatasetMetadata{
 		Version: 1, ExchangeAccountID: accountID, InstrumentID: instrumentID,
 		Interval: metadata.Interval, PriceAsset: metadata.PriceAsset, Timezone: metadata.Timezone,
 		TimestampLayout: time.RFC3339, TickSize: metadata.TickSize,
@@ -246,10 +253,10 @@ func runBacktest(ctx context.Context, options BacktestOptions, run config.Backte
 	if err != nil {
 		return BacktestResult{}, err
 	}
-	outputDir, err := outputDirectory(configDir, options.Output, run, runCount)
-	if err != nil {
-		return BacktestResult{}, err
+	if datasetHash != prepared.datasetChecksum {
+		return BacktestResult{}, fmt.Errorf("prepared dataset checksum changed during execution: got %s, want %s", datasetHash, prepared.datasetChecksum)
 	}
+	outputDir := prepared.outputDir
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		return BacktestResult{}, fmt.Errorf("create output directory: %w", err)
 	}
@@ -258,7 +265,7 @@ func runBacktest(ctx context.Context, options BacktestOptions, run config.Backte
 	if run.Output.JSON {
 		payload, err := json.MarshalIndent(reportArtifact{
 			SchemaVersion: ArtifactSchemaVersion, RunID: run.ID, StrategyID: run.Strategy,
-			ConfigSHA256: configHash, DatasetSHA256: datasetHash,
+			ConfigSHA256: configHash, DatasetSHA256: prepared.datasetChecksum,
 			DatasetPath: filepath.Clean(run.Data.Path), DatasetGaps: iterator.Gaps(),
 			BacktestReport: report,
 		}, "", "  ")
@@ -285,17 +292,16 @@ func runBacktest(ctx context.Context, options BacktestOptions, run config.Backte
 	return result, nil
 }
 
-func mustAbsoluteDir(configPath string) string {
-	absolute, err := filepath.Abs(filepath.Dir(configPath))
-	if err != nil {
-		return filepath.Dir(configPath)
-	}
-	return absolute
-}
-
 func executionID(runID, configHash string, startedAt time.Time) string {
 	sum := sha256.Sum256([]byte(runID + "\x00" + configHash + "\x00" + startedAt.Format(time.RFC3339Nano)))
 	return hex.EncodeToString(sum[:])
+}
+
+func wrapSnapshotCleanupError(runID string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("clean up backtest run %q dataset snapshot: %w", runID, err)
 }
 
 func hashFile(path string) (string, error) {

@@ -29,11 +29,10 @@ type resolvedDatasetMetadata struct {
 	RangeTo      time.Time
 }
 
-func resolveDatasetMetadata(configDir, dataPath string, run config.BacktestRun, strategy config.StrategyConfig) (resolvedDatasetMetadata, error) {
-	if run.Data.MetadataPath == "" {
+func resolveDatasetMetadata(dataPath, manifestPath string, run config.BacktestRun, strategy config.StrategyConfig) (resolvedDatasetMetadata, error) {
+	if manifestPath == "" {
 		return metadataFromConfig(run, strategy)
 	}
-	manifestPath := resolvePath(configDir, run.Data.MetadataPath)
 	manifest, err := loadDatasetManifest(manifestPath)
 	if err != nil {
 		return resolvedDatasetMetadata{}, err
