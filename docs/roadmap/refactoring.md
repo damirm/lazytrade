@@ -386,7 +386,28 @@ status и manifests артефактов, поэтому частичный term
 
 ### R12. Удаление оставшегося speculative и legacy кода
 
-Кандидаты удаляются только после повторной проверки usages:
+Статус: завершён 23 сентября 2026 года. Tasks 1–4 прошли отдельные spec и
+code-quality reviews без findings; Task 5 подтвердил итоговый scope и полный
+regression gate. Удалены неиспользуемые `Exchange.Capabilities`,
+`MovingAverageCrossParams`, production `AllowAllRisk`, pass-through
+`tinvest.CandleQuery`, `AgentLease`, дублированная validation path и лишние
+ветви `isDecimalZero`, а также CLI stubs `terminal`, `db migrate` и их общая
+not-implemented helper. `terminal` и `db migrate` не экспонируются до
+атомарной реализации; текущие SQLite migrations по-прежнему применяются при
+`sqlite.Open`.
+
+Финальная проверка: `make fmt`; `make test`; `go vet ./...`; `go build ./...`;
+`go test -race -count=1 -timeout 90s ./internal/agent ./internal/app
+./internal/backtest ./internal/cli ./internal/config ./internal/exchange/...
+./internal/storage/sqlite`. Успешные выполнения всех команд завершились с
+нулевым exit code. Первоначальный sandbox-запуск `make test` не получил доступ
+к обычному Go build cache; та же неизменённая команда затем успешно выполнена
+с разрешённым normal-cache access. Scan legacy symbols и `git diff --check` не
+вернули результатов.
+`configs/example.yaml` остался пользовательским pre-existing diff; generated
+или cache artifacts в scope не появились.
+
+Удалённый scope (каждый usage был повторно проверен перед удалением):
 
 - неиспользуемый `Exchange.Capabilities`;
 - alias `MovingAverageCrossParams`;

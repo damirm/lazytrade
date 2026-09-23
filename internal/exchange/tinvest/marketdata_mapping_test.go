@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/damirm/lazytrade/internal/domain"
+	"github.com/damirm/lazytrade/internal/exchange"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	pb "opensource.tbank.ru/invest/invest-go/proto"
@@ -45,7 +46,7 @@ func TestCandleMappingPreservesAliasedOHLC(t *testing.T) {
 	adapter := &Adapter{market: marketDataStub{candles: &pb.GetCandlesResponse{Candles: []*pb.HistoricCandle{{
 		Time: at, Open: q, High: q, Low: q, Close: q, IsComplete: true,
 	}}}}, timeout: time.Second}
-	candles, err := adapter.Candles(context.Background(), CandleQuery{InstrumentID: "instrument", Asset: "RUB", Interval: time.Minute})
+	candles, err := adapter.Candles(context.Background(), exchange.CandleQuery{InstrumentID: "instrument", Asset: "RUB", Interval: time.Minute})
 	if err != nil || len(candles) != 1 {
 		t.Fatalf("candles = %v, error = %v", candles, err)
 	}
@@ -127,7 +128,7 @@ func TestMarketUnaryRejectsMissingData(t *testing.T) {
 		{candles: &pb.GetCandlesResponse{Candles: []*pb.HistoricCandle{{Time: timestamppb.Now()}}}, trades: &pb.GetLastTradesResponse{Trades: []*pb.Trade{{InstrumentUid: "instrument", Time: timestamppb.Now(), Direction: pb.TradeDirection_TRADE_DIRECTION_BUY, Quantity: 1}}}, prices: &pb.GetLastPricesResponse{LastPrices: []*pb.LastPrice{{InstrumentUid: "instrument"}}}, book: &pb.GetOrderBookResponse{Bids: []*pb.Order{{Quantity: 1}}}, status: &pb.GetTradingStatusResponse{TradingStatus: 999}},
 	} {
 		a := &Adapter{market: stub, timeout: time.Second}
-		if _, err := a.Candles(ctx, CandleQuery{InstrumentID: "instrument", Asset: "RUB", Interval: time.Minute}); err == nil {
+		if _, err := a.Candles(ctx, exchange.CandleQuery{InstrumentID: "instrument", Asset: "RUB", Interval: time.Minute}); err == nil {
 			t.Error("accepted incomplete candles")
 		}
 		if _, err := a.LastTrades(ctx, "instrument", "RUB", time.Now(), time.Now()); err == nil {
@@ -152,7 +153,7 @@ func TestMarketUnaryRejectsMissingOrInvalidTime(t *testing.T) {
 			candles: &pb.GetCandlesResponse{Candles: []*pb.HistoricCandle{{Time: at, Open: q, High: q, Low: q, Close: q}}},
 			trades:  &pb.GetLastTradesResponse{Trades: []*pb.Trade{{InstrumentUid: "instrument", Time: at, Price: q, Quantity: 1, Direction: pb.TradeDirection_TRADE_DIRECTION_BUY}}},
 		}}
-		if _, err := a.Candles(context.Background(), CandleQuery{InstrumentID: "instrument", Asset: "RUB", Interval: time.Minute}); err == nil {
+		if _, err := a.Candles(context.Background(), exchange.CandleQuery{InstrumentID: "instrument", Asset: "RUB", Interval: time.Minute}); err == nil {
 			t.Errorf("accepted candle time %v", at)
 		}
 		if _, err := a.LastTrades(context.Background(), "instrument", "RUB", time.Now(), time.Now()); err == nil {

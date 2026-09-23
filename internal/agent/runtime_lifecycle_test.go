@@ -57,7 +57,7 @@ func TestRuntimePersistsLifecycleBeforeFirstMarketEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	subscription := exchange.Subscription{
 		InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
 	}
@@ -175,7 +175,7 @@ func requireLifecycleStatus(
 func TestRuntimeLifecycleIsRunningWhileReadyAndStoppedOnCancellation(t *testing.T) {
 	store, workers, strategyIDs, subscriptions, _ := seedTwoPendingSignals(t)
 	lifecycle := newLifecycleSpy()
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	ready := make(chan struct{}, 1)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -221,7 +221,7 @@ func TestRuntimeLifecycleBlocksAllStrategiesOnExecutionStreamError(t *testing.T)
 	executions := make(chan exchange.Execution)
 	streamErrors := make(chan error, 1)
 	adapter := &controlledExecutionExchange{
-		Exchange:   fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true}),
+		Exchange:   fake.New("fake"),
 		executions: executions,
 		errors:     streamErrors,
 	}

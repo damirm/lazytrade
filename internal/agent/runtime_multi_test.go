@@ -74,7 +74,7 @@ func TestRuntimeRunsTwoStrategiesThroughSharedStreams(t *testing.T) {
 		})
 	}
 
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	for index, item := range strategies {
 		adapter.Enqueue(fake.Scenario{Kind: fake.OrderMultipleFills, Fills: []domain.Execution{{
 			ID:         domain.ExecutionID("fill-" + string(item.id)),

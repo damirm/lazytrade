@@ -87,7 +87,7 @@ func TestStartupRecoversHistoryBeforeCheckpointReconciliationAndRunning(t *testi
 	t.Parallel()
 	ctx := context.Background()
 	store, worker, intent, request, _ := seedStagedExecutionBeforeLocalOrder(t)
-	base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	base := fake.New("fake")
 	remote, err := base.PlaceOrder(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestStartupHistoryReplayIsIdempotentAcrossRestart(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, worker, intent, request, _ := seedStagedExecutionBeforeLocalOrder(t)
-	base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	base := fake.New("fake")
 	remote, err := base.PlaceOrder(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestStartupHistoryIncompleteOrUnattributableFailsClosed(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			store, worker, intent, request, _ := seedStagedExecutionBeforeLocalOrder(t)
-			base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+			base := fake.New("fake")
 			remote, err := base.PlaceOrder(ctx, request)
 			if err != nil {
 				t.Fatal(err)

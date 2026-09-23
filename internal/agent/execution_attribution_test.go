@@ -39,7 +39,7 @@ func TestExecutionPumpUsesDurableOwnershipBeforeResponseAndAfterRestart(t *testi
 			if err := store.RecordAllowedDecisionIntent(ctx, decision, intent, audit); err != nil {
 				t.Fatal(err)
 			}
-			adapter := fake.New("fake", exchange.Capabilities{Sandbox: true})
+			adapter := fake.New("fake")
 			remote, err := adapter.PlaceOrder(ctx, request)
 			if err != nil {
 				t.Fatal(err)

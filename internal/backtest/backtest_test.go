@@ -17,6 +17,12 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type allowAllRisk struct{}
+
+func (allowAllRisk) Evaluate(context.Context, domain.Signal, PortfolioSnapshot) (RiskDecision, error) {
+	return RiskDecision{Allowed: true}, nil
+}
+
 func metadata(policy GapPolicy) DatasetMetadata {
 	price, _ := domain.NewPrice("0.01", "USD")
 	lot, _ := domain.NewQuantity("1")
@@ -270,7 +276,7 @@ func TestRunnerReproducibility(t *testing.T) {
 		}
 		broker := newBroker(t, "0.03", "5")
 		report, err := (Runner{Iterator: iterator, Clock: clock.NewVirtual(time.Time{}),
-			Strategy: &onceProcessor{}, Risk: AllowAllRisk{}, Broker: broker}).Run(context.Background())
+			Strategy: &onceProcessor{}, Risk: allowAllRisk{}, Broker: broker}).Run(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -292,7 +298,7 @@ func TestGoldenRunnerMetrics(t *testing.T) {
 	}
 	broker := newBroker(t, "0.03", "5")
 	report, err := (Runner{Iterator: iterator, Clock: clock.NewVirtual(time.Time{}),
-		Strategy: &onceProcessor{}, Risk: AllowAllRisk{}, Broker: broker}).Run(context.Background())
+		Strategy: &onceProcessor{}, Risk: allowAllRisk{}, Broker: broker}).Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +334,7 @@ func TestGoldenRoundTripMetrics(t *testing.T) {
 	}
 	report, err := (Runner{
 		Iterator: iterator, Clock: clock.NewVirtual(time.Time{}),
-		Strategy: &roundTripProcessor{}, Risk: AllowAllRisk{}, Broker: newBroker(t, "0", "0"),
+		Strategy: &roundTripProcessor{}, Risk: allowAllRisk{}, Broker: newBroker(t, "0", "0"),
 	}).Run(context.Background())
 	if err != nil {
 		t.Fatal(err)

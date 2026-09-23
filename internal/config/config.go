@@ -69,10 +69,6 @@ type StrategyParams struct {
 	Timezone       string `yaml:"timezone"`
 }
 
-// MovingAverageCrossParams is kept as an alias for callers constructing a
-// version-1 configuration programmatically.
-type MovingAverageCrossParams = StrategyParams
-
 type StrategyExecution struct {
 	Quantity  string `yaml:"quantity"`
 	OrderType string `yaml:"order_type"`

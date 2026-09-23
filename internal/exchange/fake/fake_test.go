@@ -23,7 +23,7 @@ func TestOrderScenariosAndErrorCategories(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake := New("fake", exchange.Capabilities{Sandbox: true})
+			fake := New("fake")
 			fake.Enqueue(Scenario{Kind: tt.scenario})
 			_, err := fake.PlaceOrder(context.Background(), orderRequest(t))
 			if !exchange.IsCategory(err, tt.category) {
@@ -67,7 +67,7 @@ func TestPartialAndMultipleFills(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake := New("fake", exchange.Capabilities{MarketOrders: true, Sandbox: true})
+			fake := New("fake")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			stream, err := fake.SubscribeExecutions(ctx, "account")
@@ -97,7 +97,7 @@ func TestPartialAndMultipleFills(t *testing.T) {
 }
 
 func TestDisconnectTerminatesMarketAndExecutionStreams(t *testing.T) {
-	fake := New("fake", exchange.Capabilities{StreamingCandles: true})
+	fake := New("fake")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	subscription := exchange.Subscription{
@@ -145,7 +145,7 @@ func TestDisconnectTerminatesMarketAndExecutionStreams(t *testing.T) {
 }
 
 func TestDisconnectCleansUpBackgroundSubscribers(t *testing.T) {
-	fake := New("fake", exchange.Capabilities{StreamingCandles: true})
+	fake := New("fake")
 	market, err := fake.SubscribeMarketData(context.Background(), []exchange.Subscription{{
 		InstrumentID: "instrument", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
 	}})
@@ -185,11 +185,10 @@ func TestDisconnectCleansUpBackgroundSubscribers(t *testing.T) {
 	}
 }
 
-func TestCapabilitiesAndOrderLifecycle(t *testing.T) {
-	capabilities := exchange.Capabilities{MarketOrders: true, LimitOrders: true, Sandbox: true}
-	fake := New("fake", capabilities)
-	if fake.Name() != "fake" || fake.Capabilities() != capabilities {
-		t.Fatal("identity or capabilities mismatch")
+func TestIdentityAndOrderLifecycle(t *testing.T) {
+	fake := New("fake")
+	if fake.Name() != "fake" {
+		t.Fatal("identity mismatch")
 	}
 	fake.Enqueue(Scenario{Kind: OrderSuccess})
 	order, err := fake.PlaceOrder(context.Background(), orderRequest(t))
@@ -210,7 +209,7 @@ func TestCapabilitiesAndOrderLifecycle(t *testing.T) {
 }
 
 func TestMarketQueueOverflowIsReportedWithoutBlocking(t *testing.T) {
-	fake := New("fake", exchange.Capabilities{StreamingCandles: true})
+	fake := New("fake")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, err := fake.SubscribeMarketData(ctx, []exchange.Subscription{{

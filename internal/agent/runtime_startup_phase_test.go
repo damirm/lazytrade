@@ -110,7 +110,7 @@ func startupTraceFixture(t *testing.T, failMarket bool) (Runtime, *startupTrace)
 	t.Helper()
 	ctx := context.Background()
 	store, workers, strategyIDs, subscriptions, pending := seedTwoPendingSignals(t)
-	base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	base := fake.New("fake")
 	for _, id := range []domain.StrategyID{"ma-a", "ma-b"} {
 		signal := pending[id]
 		decision, _, err := buildRiskDecision(signal, RiskDecision{Allowed: true})

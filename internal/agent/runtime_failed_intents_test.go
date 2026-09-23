@@ -30,7 +30,7 @@ func TestResolveFailedStrategyIntentsTerminalizesReadyWithoutPlacement(t *testin
 	t.Parallel()
 	ctx := context.Background()
 	store, failed, peer := seedFailedStrategyIntents(t, "ready")
-	adapter := &placingExchange{Exchange: fake.New("fake", exchange.Capabilities{Sandbox: true})}
+	adapter := &placingExchange{Exchange: fake.New("fake")}
 	runtime := Runtime{Exchange: adapter, Intents: store}
 
 	if err := runtime.resolveFailedStrategyIntents(ctx, failed.StrategyID); err != nil {
@@ -47,7 +47,7 @@ func TestResolveFailedStrategyIntentsRecoversOrderConfirmedByClientID(t *testing
 	t.Parallel()
 	ctx := context.Background()
 	store, failed, peer := seedFailedStrategyIntents(t, "submitting")
-	base := fake.New("fake", exchange.Capabilities{Sandbox: true})
+	base := fake.New("fake")
 	remote, err := base.PlaceOrder(ctx, requestForIntent(failed))
 	if err != nil {
 		t.Fatalf("seed confirmed order: %v", err)
@@ -76,7 +76,7 @@ func TestResolveFailedStrategyIntentsBlocksUnknownIntentProvenMissing(t *testing
 	t.Parallel()
 	ctx := context.Background()
 	store, failed, peer := seedFailedStrategyIntents(t, "unknown")
-	adapter := &placingExchange{Exchange: fake.New("fake", exchange.Capabilities{Sandbox: true})}
+	adapter := &placingExchange{Exchange: fake.New("fake")}
 	runtime := Runtime{Exchange: adapter, Intents: store}
 
 	err := runtime.resolveFailedStrategyIntents(ctx, failed.StrategyID)
@@ -98,7 +98,7 @@ func TestResolveFailedStrategyIntentsBlocksSubmittingIntentProvenMissing(t *test
 	t.Parallel()
 	ctx := context.Background()
 	store, failed, peer := seedFailedStrategyIntents(t, "submitting")
-	adapter := &placingExchange{Exchange: fake.New("fake", exchange.Capabilities{Sandbox: true})}
+	adapter := &placingExchange{Exchange: fake.New("fake")}
 
 	err := (Runtime{Exchange: adapter, Intents: store}).resolveFailedStrategyIntents(ctx, failed.StrategyID)
 	if err == nil {

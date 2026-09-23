@@ -63,7 +63,8 @@ testdata/exchange/
 ## Обязанности
 
 - описать минимальный `Exchange` contract;
-- реализовать capability flags;
+- документировать поддерживаемые операции; capability negotiation вводить
+  только вместе с реальным consumer, без заранее заданного snapshot flags;
 - нормализовать instruments, prices, quantities и timestamps;
 - классифицировать ошибки;
 - реализовать fake exchange;
@@ -118,7 +119,7 @@ agent предоставляет необходимые операции и кл
 - mapper каждого денежного SDK-типа;
 - tick/lot rounding;
 - error classification;
-- capabilities;
+- поддержка и явный отказ для неподдерживаемых операций;
 - terminal error/EOF, отсутствие reconnect и graceful cancellation;
 - bounded queue policy;
 - duplicate/partial fills fake;
@@ -151,7 +152,7 @@ agent предоставляет необходимые операции и кл
 Дополнительно указать:
 
 - поддержанные T-Invest методы;
-- capability matrix;
+- документированная capability matrix (не обязательный Go snapshot flags);
 - mapping ошибок;
 - one-shot stream policy и ограничения проверки subscription ACK;
 - известные ограничения sandbox;

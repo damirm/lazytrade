@@ -52,7 +52,6 @@ type RecoveredExecutionFill struct {
 // transport types must not cross this interface.
 type Exchange interface {
 	Name() string
-	Capabilities() Capabilities
 
 	Instruments(context.Context) ([]domain.Instrument, error)
 	Portfolio(context.Context, domain.ExchangeAccountID) (Portfolio, error)

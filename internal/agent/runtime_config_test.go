@@ -46,7 +46,7 @@ func TestNewRuntimeRejectsInconsistentStrategyBinding(t *testing.T) {
 	t.Parallel()
 	store, worker, _ := seedPendingSignal(t)
 	_, err := NewRuntime(RuntimeConfig{
-		Exchange: fake.New("fake", exchange.Capabilities{Sandbox: true}), Store: store,
+		Exchange: fake.New("fake"), Store: store,
 		Strategies: []StrategyBinding{{
 			ID: "ma", InstrumentID: "TEST", Worker: worker,
 			Risk: &recordingRisk{decision: RiskDecision{Allowed: true}},

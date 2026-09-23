@@ -70,7 +70,7 @@ func ValidateCandleData(ctx context.Context, options ValidateDataOptions) (Valid
 	}
 	strategy := config.StrategyConfig{
 		Exchange: manifest.Exchange, Instrument: requestedID,
-		Strategy: config.StrategyDefinition{Params: config.MovingAverageCrossParams{
+		Strategy: config.StrategyDefinition{Params: config.StrategyParams{
 			CandleInterval: manifest.Interval,
 		}},
 	}

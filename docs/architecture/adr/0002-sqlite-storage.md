@@ -29,7 +29,8 @@ fail-fast семантику. Канонизация директории уст
 symlink к директории.
 
 MVP поддерживает macOS/Linux. Для Windows потребуется отдельная реализация
-того же `storage.AgentLease`; это не меняет repository contracts.
+OS lock; это не меняет repository contracts и не требует generic lease port
+заранее.
 
 ## Последствия
 
@@ -53,3 +54,12 @@ execution inbox/recovery и доказательства отсутствия `S
 поэтому runtime migration runner и генератор запросов используют одно описание
 схемы. Новая forward-миграция автоматически входит в следующий запуск
 `sqlc generate`; generated code проверяется через `make sqlc-check`.
+
+## Дополнение 2026-09-23: single-driver lifecycle
+
+CLI использует concrete `sqlite.Store.Acquire/Release`, а `Store.Close`
+автоматически освобождает lock. Неиспользуемый `storage.AgentLease` удалён в
+R12 без изменения acquire/release, crash cleanup и CLI lifecycle. Отдельный
+consumer-owned lease interface появится со вторым driver либо реальным generic
+consumer; точная форма будущего API сейчас не фиксируется. PostgreSQL session
+advisory lock остаётся требованием будущего этапа, а не реализованным adapter.

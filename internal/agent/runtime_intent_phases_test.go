@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/damirm/lazytrade/internal/exchange"
 	"github.com/damirm/lazytrade/internal/exchange/fake"
 	"github.com/damirm/lazytrade/internal/storage"
 )
@@ -14,7 +13,7 @@ func TestSubmitReadyIntentTransitionsThroughSubmittingToSubmitted(t *testing.T) 
 	t.Parallel()
 	ctx := context.Background()
 	store, intent, _ := seedFailedStrategyIntents(t, "ready")
-	adapter := &placingExchange{Exchange: fake.New("fake", exchange.Capabilities{Sandbox: true})}
+	adapter := &placingExchange{Exchange: fake.New("fake")}
 
 	if err := (Runtime{Exchange: adapter, Intents: store}).submitIntent(ctx, intent, requestForIntent(intent)); err != nil {
 		t.Fatalf("submit ready intent: %v", err)
@@ -33,7 +32,7 @@ func TestRestartMaySubmitReadyIntent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, intent, _ := seedFailedStrategyIntents(t, "ready")
-	adapter := &placingExchange{Exchange: fake.New("fake", exchange.Capabilities{Sandbox: true})}
+	adapter := &placingExchange{Exchange: fake.New("fake")}
 
 	// A durable ready intent represents a process crash before the exchange API
 	// boundary. It is the only unresolved phase that restart may submit.
@@ -54,7 +53,7 @@ func TestResolvePendingIntentsBlocksSubmittingAndUnknownNotFoundWithoutPlacement
 			t.Parallel()
 			ctx := context.Background()
 			store, intent, _ := seedFailedStrategyIntents(t, status)
-			adapter := &placingExchange{Exchange: fake.New("fake", exchange.Capabilities{Sandbox: true})}
+			adapter := &placingExchange{Exchange: fake.New("fake")}
 
 			_, err := (Runtime{Exchange: adapter, Intents: store}).resolvePendingIntents(ctx)
 			if err == nil {
@@ -76,7 +75,7 @@ func TestResolvePendingIntentsRecoversFoundSubmittingAsSubmitted(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, intent, _ := seedFailedStrategyIntents(t, "submitting")
-	base := fake.New("fake", exchange.Capabilities{Sandbox: true})
+	base := fake.New("fake")
 	if _, err := base.PlaceOrder(ctx, requestForIntent(intent)); err != nil {
 		t.Fatalf("seed exchange order: %v", err)
 	}
@@ -111,7 +110,7 @@ func TestCrashAfterExchangeAcceptedOrderRecoversSubmittingByLookup(t *testing.T)
 	t.Parallel()
 	ctx := context.Background()
 	store, intent, _ := seedFailedStrategyIntents(t, "ready")
-	base := fake.New("fake", exchange.Capabilities{Sandbox: true})
+	base := fake.New("fake")
 	failingStore := &failSubmittedResolutionStore{Store: store}
 
 	err := (Runtime{Exchange: base, Intents: failingStore}).submitIntent(ctx, intent, requestForIntent(intent))

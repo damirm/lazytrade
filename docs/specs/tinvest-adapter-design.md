@@ -287,8 +287,8 @@ Quotation  { units, nanos }
   optional/unknown.
 
 Для bonds/futures/options проверить специальные правила отображения цены до
-реализации торговли ими. Без отдельного mapper/test их capability
-`PlaceOrder` должен быть выключен.
+реализации торговли ими. Без отдельного mapper/test `PlaceOrder` для этих
+классов должен быть запрещён.
 
 ## 6. Client order ID и идемпотентность
 
@@ -456,6 +456,11 @@ reconciliation и reconnect.
 
 ## 10. Capability matrix MVP
 
+Ниже — целевая матрица возможностей, не snapshot flags текущего Go adapter.
+Capability negotiation не реализована и будет спроектирована вместе с реальным
+consumer. Фактические возможности и ограничения описаны в
+[`current.md`](../roadmap/current.md) и текущих adapter tests.
+
 | Capability | Sandbox MVP | Примечание |
 |---|---:|---|
 | Instrument lookup/metadata | Да | UID primary, FIGI alias |
@@ -479,10 +484,11 @@ reconciliation и reconnect.
 | Production trading | Нет | запрещено конфигурацией MVP |
 | Margin/risk figures authoritative | Нет | sandbox упрощён |
 
-Runtime capability дополнительно пересекается с instrument flags
+Доступность конкретной операции должна учитывать instrument flags
 `api_trade_available_flag`, `market_order_available_flag`,
 `limit_order_available_flag` и trading status. Статическая capability биржи не
-означает, что конкретный инструмент сейчас доступен.
+означает, что конкретный инструмент сейчас доступен. Это требование проверки
+доступности, а не утверждение о существующем runtime capability API.
 
 ## 11. Неизвестные вопросы и обязательные проверки
 
@@ -530,8 +536,10 @@ Runtime capability дополнительно пересекается с instru
 
 ### Поддерживаемые методы
 
-Спроектированы Instruments, MarketData unary/stream, Sandbox account/state/order
-методы и OrderState/operations reconciliation path. Реализация кода не начата.
+Реализованы fake exchange, T-Invest instruments, portfolio, market data,
+sandbox orders и execution/history recovery. Целевые возможности выше не
+следует считать полностью реализованными; текущий статус и ограничения — в
+[`current.md`](../roadmap/current.md).
 
 ### Ключевые решения
 
@@ -546,7 +554,7 @@ Runtime capability дополнительно пересекается с instru
 
 ### Следующий шаг
 
-Интегратору следует утвердить domain contracts (`Instrument`, `MarketEvent`,
-`ExchangeError`, `Capabilities`, order IDs) и ADR по protobuf/SDK. После этого
-Exchange agent может реализовать fake adapter и mapper tests, затем read-only
-T-Invest, и только после стабилизации execution contract — sandbox orders.
+Следовать [`current.md`](../roadmap/current.md): после зелёной локальной
+baseline выполнить read-only preflight, затем подтвердить минимальный sandbox
+buy/sell round trip во время торговой сессии. Будущая capability negotiation
+не блокирует этот milestone и не требует предварительного Go-контракта.

@@ -48,6 +48,9 @@ infrastructure adapters:
 ### Exchange boundary
 
 - `internal/exchange.Exchange` — нормализованный интерфейс.
+- Capability negotiation пока не имеет runtime consumer: неиспользуемый
+  snapshot flags удалён в R12. Будущий контракт определяется вместе с реальным
+  consumer, а не заранее для потенциальных адаптеров.
 - SDK T-Invest остаётся только внутри `internal/exchange/tinvest`.
 - Market/execution streams имеют один lifetime: data и terminal error, без
   reconnect или поколений соединений. Обрыв требует fail closed и restart с
@@ -107,6 +110,11 @@ infrastructure adapters:
 - Текущий driver — SQLite без CGO (`modernc.org/sqlite`).
 - SQLite ограничивается одним одновременно работающим agent; store использует
   lock и одно открытое соединение там, где это требуется для корректности.
+- Текущий single-driver lifecycle в CLI вызывает concrete
+  `sqlite.Store.Acquire/Release`; `Close` освобождает lock автоматически.
+  Generic lease port не используется. Consumer-owned интерфейс появится
+  вместе со вторым driver или реальным generic consumer; его форма пока не
+  фиксируется.
 - Схема развивается append-only миграциями. Не редактировать применённую
   миграцию; добавлять следующую.
 - PostgreSQL предусмотрен через те же storage contracts, но не реализован.
@@ -118,6 +126,9 @@ infrastructure adapters:
 - Выбранный chart package — `ntcharts`, изолированный за внутренним adapter.
 - Bubble Tea, Bubbles, Lip Gloss и `ntcharts` пока не добавлены в `go.mod`:
   решение принято, реализация этапа TUI не начата.
+- Команда `terminal` сейчас не экспонируется и вернётся атомарно вместе с
+  read-only TUI. `TerminalConfig` и target validation `config validate --for
+  terminal` сохраняются до реализации.
 - Торговые mutations не должны появляться в terminal code path.
 
 ## Основные данные SQLite

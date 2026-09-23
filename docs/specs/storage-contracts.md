@@ -722,14 +722,11 @@ Lock защищает только от случайного запуска вт
 умолчанию к backtest, если backtest пишет metadata короткими транзакциями и не
 использует live runtime state.
 
-Требуемый port:
-
-```go
-type AgentLease interface {
-    Acquire(ctx context.Context, owner domain.AgentInstanceID) error
-    Release(ctx context.Context) error
-}
-```
+Текущий single-driver runtime использует concrete `sqlite.Store.Acquire/Release`
+из CLI; `Store.Close` автоматически освобождает lock. Неиспользуемый generic
+lease port удалён в R12. Consumer-owned интерфейс определяется вместе со
+вторым driver либо реальным generic consumer, без преждевременной фиксации
+имени и сигнатур.
 
 Семантика:
 
@@ -743,10 +740,10 @@ type AgentLease interface {
 - PID-файл без OS lock недостаточен из-за stale PID и PID reuse;
 - crash обязан освобождать OS/session lock автоматически.
 
-Рекомендация SQLite: OS advisory lock отдельного lock-файла, путь которого
+Текущая SQLite-реализация: OS advisory lock отдельного lock-файла, путь которого
 канонически производен от DB path, с file descriptor на весь lifecycle.
-Проверить macOS/Linux и поведение symlink/relative paths. Для in-memory DB в
-tests использовать injectable lock implementation.
+Поддерживаются macOS/Linux. In-memory DB не предоставляет agent lock;
+lock tests используют реальный временный файл.
 
 Будущий PostgreSQL: session-level advisory lock на выделенном connection.
 Connection нельзя возвращать в pool до release. Это предохранитель, не leader
@@ -908,7 +905,8 @@ storage fixture должен позволить reopen после:
 - `ControlStore`, `AuditReader`, query projections;
 - `StatisticsStore`;
 - отдельный `BacktestRunStore`;
-- lifecycle-scoped `AgentLease`.
+- consumer-owned lifecycle lock contract — только при появлении второго driver
+  или generic consumer; сейчас используется concrete SQLite lifecycle.
 
 ### Атомарные границы
 

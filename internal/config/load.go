@@ -29,7 +29,7 @@ func LoadFileFor(path string, command Command) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if err := cfg.ValidateFor(command, nil); err != nil {
+	if err := cfg.validateCommandRequirements(command, nil); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil

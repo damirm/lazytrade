@@ -55,7 +55,7 @@ func TestMultiStrategyRuntimeFailsClosedWhenExecutionStreamBreaks(t *testing.T) 
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store, workers, strategyIDs, subscriptions, _ := seedTwoPendingSignals(t)
-			base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+			base := fake.New("fake")
 			executions := make(chan exchange.Execution)
 			streamErrors := make(chan error, 1)
 			adapter := &controlledExecutionExchange{

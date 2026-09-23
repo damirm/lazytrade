@@ -78,7 +78,7 @@ func TestRuntimePersistsStateAndIntentBeforePlacingOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	riskGate := &recordingRisk{decision: RiskDecision{Allowed: true}}
 	ready := make(chan struct{}, 1)
 	orders := make(chan domain.Order, 1)
@@ -193,7 +193,7 @@ func TestRuntimeRoutesTwoStrategiesByInstrumentAndRisk(t *testing.T) {
 		}
 		risks[item.strategyID] = &recordingRisk{decision: RiskDecision{Allowed: true}}
 	}
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	runtime := Runtime{Exchange: adapter, Intents: store}
 	for index, close := range []int64{10, 11, 12, 8} {
 		for _, instrument := range []domain.InstrumentID{"TEST-A", "TEST-B"} {
@@ -214,7 +214,7 @@ func TestRuntimeRoutesTwoStrategiesByInstrumentAndRisk(t *testing.T) {
 func TestRuntimeRecoversSignalCommittedBeforeRiskDecision(t *testing.T) {
 	t.Parallel()
 	store, worker, pending := seedPendingSignal(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	ready := make(chan struct{}, 1)
 	orders := make(chan domain.Order, 1)
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -253,7 +253,7 @@ func TestRuntimeRecoversSignalCommittedBeforeRiskDecision(t *testing.T) {
 func TestRuntimePersistsRejectedRecoveryWithoutIntent(t *testing.T) {
 	t.Parallel()
 	store, worker, pending := seedPendingSignal(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	ready := make(chan struct{}, 1)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -287,7 +287,7 @@ func TestRuntimePersistsRejectedRecoveryWithoutIntent(t *testing.T) {
 func TestRuntimeRecoversUnknownOutcomeByClientOrderIDWithoutResubmit(t *testing.T) {
 	t.Parallel()
 	store, worker, pending := seedPendingSignal(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	adapter.Enqueue(fake.Scenario{Kind: fake.OrderUnknownOutcome})
 	subscription := exchange.Subscription{
 		InstrumentID: "TEST", Kind: exchange.SubscriptionCandles, Interval: time.Minute,
@@ -347,7 +347,7 @@ func TestRuntimeRecoversUnknownOutcomeByClientOrderIDWithoutResubmit(t *testing.
 func TestRuntimePersistsKnownExchangeRejection(t *testing.T) {
 	t.Parallel()
 	store, worker, pending := seedPendingSignal(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	adapter.Enqueue(fake.Scenario{Kind: fake.OrderReject})
 	ready := make(chan struct{}, 1)
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -375,7 +375,7 @@ func TestRuntimePersistsKnownExchangeRejection(t *testing.T) {
 func TestRuntimeStopsBeforeMarketSubscriptionOnReconciliationMismatch(t *testing.T) {
 	t.Parallel()
 	store, worker, _ := seedPendingSignal(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	firstCtx, firstCancel := context.WithCancel(context.Background())
 	ready := make(chan struct{}, 1)
 	done := make(chan error, 1)
@@ -410,7 +410,7 @@ func TestRuntimeStopsBeforeMarketSubscriptionOnReconciliationMismatch(t *testing
 func TestRuntimeDeduplicatesExecutionAndUpdatesPosition(t *testing.T) {
 	t.Parallel()
 	store, worker, _ := seedPendingSignalValues(t, []int64{12, 11, 10, 14})
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	executedAt := time.Date(2026, 1, 1, 0, 0, 2, 0, time.UTC)
 	fill := domain.Execution{
 		ID: "fill-1", OrderID: "fake-order-1", StrategyID: "ma", InstrumentID: "TEST",
@@ -464,7 +464,7 @@ func TestRuntimeDeduplicatesExecutionAndUpdatesPosition(t *testing.T) {
 func TestRuntimePersistsRealizedPnLCommissionsAndDailyStatistics(t *testing.T) {
 	t.Parallel()
 	store, worker, _ := seedPendingSignalValues(t, []int64{12, 11, 10, 14})
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	executedAt := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	execution := func(id, orderID, trade string, side domain.OrderSide, price, commission int64, at time.Time) domain.Execution {
 		return domain.Execution{

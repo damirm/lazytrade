@@ -33,13 +33,12 @@ type Scenario struct {
 type Exchange struct {
 	mu sync.Mutex
 
-	name         string
-	capabilities exchange.Capabilities
-	instruments  []domain.Instrument
-	portfolio    exchange.Portfolio
-	scenarios    []Scenario
-	orders       map[domain.OrderID]domain.Order
-	orderSeq     uint64
+	name        string
+	instruments []domain.Instrument
+	portfolio   exchange.Portfolio
+	scenarios   []Scenario
+	orders      map[domain.OrderID]domain.Order
+	orderSeq    uint64
 
 	marketSubscribers    map[uint64]*marketSubscriber
 	executionSubscribers map[uint64]*executionSubscriber
@@ -63,10 +62,9 @@ type executionSubscriber struct {
 	cancel     context.CancelFunc
 }
 
-func New(name string, capabilities exchange.Capabilities) *Exchange {
+func New(name string) *Exchange {
 	return &Exchange{
 		name:                 name,
-		capabilities:         capabilities,
 		orders:               make(map[domain.OrderID]domain.Order),
 		marketSubscribers:    make(map[uint64]*marketSubscriber),
 		executionSubscribers: make(map[uint64]*executionSubscriber),
@@ -74,8 +72,7 @@ func New(name string, capabilities exchange.Capabilities) *Exchange {
 	}
 }
 
-func (f *Exchange) Name() string                        { return f.name }
-func (f *Exchange) Capabilities() exchange.Capabilities { return f.capabilities }
+func (f *Exchange) Name() string { return f.name }
 
 func (f *Exchange) SetInstruments(instruments []domain.Instrument) {
 	f.mu.Lock()

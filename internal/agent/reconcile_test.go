@@ -28,7 +28,7 @@ func (f reconciliationFixture) ListOpenOrdersByExchange(context.Context, domain.
 
 func TestReconcilerHealthySnapshot(t *testing.T) {
 	t.Parallel()
-	adapter := fake.New("fake", exchange.Capabilities{Sandbox: true})
+	adapter := fake.New("fake")
 	adapter.SetPortfolio(exchange.Portfolio{
 		AccountID: "fake", AsOf: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		Positions: []exchange.Position{{
@@ -62,7 +62,7 @@ func TestReconcilerHealthySnapshot(t *testing.T) {
 }
 
 func TestReconcilerMatchesPersistedSellOrder(t *testing.T) {
-	adapter := fake.New("fake", exchange.Capabilities{Sandbox: true})
+	adapter := fake.New("fake")
 	adapter.SetPortfolio(exchange.Portfolio{AccountID: "fake", AsOf: time.Now().UTC()})
 	remote, err := adapter.PlaceOrder(context.Background(), exchange.NewOrder{
 		ClientOrderID: "client-1", StrategyID: "ma", ExchangeAccountID: "fake",
@@ -84,7 +84,7 @@ func TestReconcilerMatchesPersistedSellOrder(t *testing.T) {
 
 func TestReconcilerFailsClosedOnPositionAndOrderMismatch(t *testing.T) {
 	t.Parallel()
-	adapter := fake.New("fake", exchange.Capabilities{Sandbox: true})
+	adapter := fake.New("fake")
 	adapter.SetPortfolio(exchange.Portfolio{
 		AccountID: "fake", AsOf: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		Positions: []exchange.Position{{

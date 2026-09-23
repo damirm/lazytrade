@@ -40,12 +40,14 @@ T-Invest sandbox. Production trading намеренно выключен.
 
 ## Что ещё не реализовано
 
-- `terminal`: read-only TUI и `ntcharts` ещё не подключены; команда является
-  заглушкой. Не использовать устаревшее упоминание `asciigraph` из
-  `docs/archive/initial-product-vision.md` как архитектурное решение.
+- `terminal`: read-only TUI и `ntcharts` ещё не подключены; команда сейчас не
+  экспонируется и вернётся атомарно вместе с реализацией. Не использовать
+  устаревшее упоминание `asciigraph` из `docs/archive/initial-product-vision.md`
+  как архитектурное решение.
 - Web API/dashboard, pause/resume UI и emergency-stop controls.
-- Команда `db migrate` является заглушкой; миграции применяются при открытии
-  SQLite store.
+- `db migrate` сейчас не экспонируется и вернётся атомарно вместе с
+  реализацией; текущие SQLite migrations по-прежнему применяются при
+  `sqlite.Open`.
 - Production T-Invest endpoint и любой live trading.
 - Multi-exchange runtime: текущий agent требует один exchange для всех
   стратегий.
@@ -104,9 +106,12 @@ R9 разделил приватные фазы startup/recovery и market loop 
 runtime helpers по ответственности без изменения торгового поведения. R10
 объединил открытие sandbox T-Invest в CLI и построение risk/trading-day config
 для live/backtest. R11 ввёл один неизменяемый snapshot на backtest run и
-ограничил terminal persistence по времени. Реальный sandbox buy/sell round
-trip остаётся неподтверждённым; следующий фиксированный пункт поддерживающего
-плана — R12 (удаление оставшегося speculative и legacy кода).
+ограничил terminal persistence по времени. R12 удалил оставшийся speculative
+и legacy code и завершён полным local regression gate 23 сентября 2026 года.
+Реальный sandbox buy/sell round trip остаётся неподтверждённым: дальнейшая
+работа возвращается к зафиксированному основному порядку — read-only sandbox
+preflight, затем только явно авторизованный минимальный buy/sell smoke-test во
+время открытой сессии.
 Открытые safety-находки R9 перечислены в
 [trading-runtime.md](../architecture/trading-runtime.md#startup-sequence) и
 не меняют основной порядок работ выше.

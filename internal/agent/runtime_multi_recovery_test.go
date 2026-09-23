@@ -39,7 +39,7 @@ func (r *multiRecoveryRisk) snapshot() []domain.Signal {
 func TestRuntimeRecoversTwoStrategiesThroughTheirOwnRiskGatesWithoutDuplicates(t *testing.T) {
 	ctx := context.Background()
 	store, workers, strategyIDs, subscriptions, pending := seedTwoPendingSignals(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	riskA, riskB := &multiRecoveryRisk{}, &multiRecoveryRisk{}
 	risks := map[domain.StrategyID]SignalRisk{
 		"ma-a": riskA,
@@ -105,7 +105,7 @@ func TestRuntimeReturnsPersistedReadyIntentsForSafeSubmission(t *testing.T) {
 		}
 	}
 
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	runtime := Runtime{Exchange: adapter, Intents: store}
 	ready, err := runtime.resolvePendingIntents(ctx)
 	if err != nil {

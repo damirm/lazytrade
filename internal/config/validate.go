@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -349,10 +348,6 @@ func isDecimalZero(value string) bool {
 	value = strings.TrimPrefix(value, "+")
 	value = strings.TrimPrefix(value, "-")
 	value = strings.ReplaceAll(value, ".", "")
-	_, err := strconv.ParseUint(value, 10, 64)
-	if err == nil {
-		return strings.Trim(value, "0") == ""
-	}
 	return strings.Trim(value, "0") == ""
 }
 
@@ -362,6 +357,10 @@ func (cfg Config) ValidateFor(command Command, lookup func(string) (string, bool
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	return cfg.validateCommandRequirements(command, lookup)
+}
+
+func (cfg Config) validateCommandRequirements(command Command, lookup func(string) (string, bool)) error {
 	if lookup == nil {
 		lookup = os.LookupEnv
 	}

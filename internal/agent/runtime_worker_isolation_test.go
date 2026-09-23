@@ -84,7 +84,7 @@ func TestRuntimeIsolatesWorkerFailureAndKeepsPeerStrategyRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	lifecycle := newLifecycleSpy()
 	ready := make(chan struct{}, 1)
 	orders := make(chan domain.Order, 1)
@@ -156,7 +156,7 @@ func TestRuntimeIsolatesWorkerFailureAndKeepsPeerStrategyRunning(t *testing.T) {
 func TestRuntimeRecordsLateExecutionAfterOwningWorkerFails(t *testing.T) {
 	ctx := context.Background()
 	store, workers, strategyIDs, subscriptions := seedTwoPendingBuySignalsForIsolation(t)
-	base := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	base := fake.New("fake")
 	executions := make(chan exchange.Execution, 1)
 	streamErrors := make(chan error, 1)
 	adapter := &controlledExecutionExchange{

@@ -36,12 +36,6 @@ type RiskObserver interface {
 	Observe(context.Context, domain.MarketEvent, []domain.Execution, PortfolioSnapshot) (RiskDecision, error)
 }
 
-type AllowAllRisk struct{}
-
-func (AllowAllRisk) Evaluate(context.Context, domain.Signal, PortfolioSnapshot) (RiskDecision, error) {
-	return RiskDecision{Allowed: true}, nil
-}
-
 type Runner struct {
 	Iterator EventIterator
 	Clock    clock.MutableClock

@@ -1,0 +1,19 @@
+Automated trading, market data, and strategy backtesting
+
+Usage:
+  lazytrade [command]
+
+Available Commands:
+  account     Inspect exchange accounts
+  agent       Run the trading agent
+  backtest    Run strategies against historical data
+  completion  Generate the autocompletion script for the specified shell
+  config      Inspect and validate configuration
+  data        Import and validate historical market data
+  help        Help about any command
+  version     Print application version
+
+Flags:
+  -h, --help   help for lazytrade
+
+Use "lazytrade [command] --help" for more information about a command.

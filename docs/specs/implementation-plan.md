@@ -271,7 +271,6 @@ internal/
     exchange/
         exchange.go
         registry.go
-        capabilities.go
         tinvest/
             client.go
             mapper.go
@@ -544,7 +543,6 @@ strategy instances могут быть направлены на разные б
 ```go
 type Exchange interface {
     Name() string
-    Capabilities() Capabilities
     Instruments(ctx context.Context) ([]Instrument, error)
     Portfolio(ctx context.Context, accountID string) (Portfolio, error)
     SubscribeMarketData(
@@ -577,7 +575,7 @@ type Exchange interface {
 
 #### FR-EXCHANGE-003
 
-Адаптер должен предоставлять capability flags как минимум для:
+Будущая capability negotiation должна описывать поддержку как минимум:
 
 - market orders;
 - limit orders;
@@ -585,6 +583,12 @@ type Exchange interface {
 - order book;
 - streaming candles;
 - sandbox.
+
+Текущий single-exchange runtime не использует capability negotiation.
+Неиспользуемый snapshot flags удалён в R12; конкретные типы, методы и способ
+negotiation определяются вместе с реальным consumer, а не являются обязательным
+handoff текущего adapter. Поддержка функции адаптером не заменяет проверку
+instrument metadata и текущего trading status.
 
 #### FR-EXCHANGE-004
 
@@ -1352,6 +1356,10 @@ database:
 Lock служит только защитой от случайного второго запуска, а не распределённым
 механизмом.
 
+Сейчас CLI использует concrete `sqlite.Store.Acquire/Release` и cleanup через
+`Close`. Generic consumer-owned lease contract появится вместе со вторым
+driver либо реальным generic consumer; точные сигнатуры заранее не задаются.
+
 ### FR-STATS: P&L и статистика
 
 #### FR-STATS-001
@@ -2075,7 +2083,8 @@ gates. Они могут блокировать исполнение даже п
 
 Задачи:
 
-1. Реализовать exchange interfaces и capabilities.
+1. Реализовать минимальные используемые exchange interfaces; capability
+   negotiation отложена до реального consumer (FR-EXCHANGE-003).
 2. Реализовать нормализованные market/order модели.
 3. Реализовать классификацию ошибок.
 4. Создать fake exchange со сценариями:

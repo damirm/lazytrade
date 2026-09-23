@@ -20,7 +20,7 @@ func TestStartupDrainsStagedExecutionAfterRecoveringLocalOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, worker, intent, _, fill := seedStagedExecutionBeforeLocalOrder(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	remote, err := adapter.PlaceOrder(ctx, requestForIntent(intent))
 	if err != nil {
 		t.Fatalf("seed remote order: %v", err)
@@ -74,7 +74,7 @@ func TestExecutionInboxDuplicateReplayDoesNotReapplyProjections(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, _, intent, request, fill := seedStagedExecutionBeforeLocalOrder(t)
-	adapter := fake.New("fake", exchange.Capabilities{Sandbox: true})
+	adapter := fake.New("fake")
 	remote, err := adapter.PlaceOrder(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestLiveExecutionStreamIngestsThroughStageThenApply(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, worker, intent, request, fill := seedStagedExecutionBeforeLocalOrder(t)
-	adapter := fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true})
+	adapter := fake.New("fake")
 	remote, err := adapter.PlaceOrder(ctx, request)
 	if err != nil {
 		t.Fatal(err)

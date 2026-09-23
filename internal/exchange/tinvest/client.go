@@ -90,9 +90,6 @@ func Open(ctx context.Context, cfg Config, opts ...grpc.DialOption) (*Adapter, e
 
 func (a *Adapter) Close() error { return a.conn.Close() }
 func (a *Adapter) Name() string { return a.name }
-func (a *Adapter) Capabilities() exchange.Capabilities {
-	return exchange.Capabilities{OrderBook: true, StreamingCandles: true, StreamingTrades: true, StreamingLastPrice: true, Sandbox: true}
-}
 
 func (a *Adapter) timeoutContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, a.timeout)

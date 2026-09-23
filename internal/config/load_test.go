@@ -227,6 +227,26 @@ func TestValidateForAgentRequiresCredentials(t *testing.T) {
 	}
 }
 
+func TestValidateForReturnsStaticErrorBeforeCommandRequirements(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Version = 0
+	cfg.Agent.Strategies = nil
+	lookupCalled := false
+
+	err := cfg.ValidateFor(config.CommandAgent, func(string) (string, bool) {
+		lookupCalled = true
+		return "", false
+	})
+	if err == nil || !strings.Contains(err.Error(), "config.version") {
+		t.Fatalf("ValidateFor(agent) error = %v, want static version error", err)
+	}
+	if lookupCalled {
+		t.Fatal("ValidateFor(agent) resolved credentials before static validation")
+	}
+}
+
 func validConfig() config.Config {
 	return config.Config{
 		Version: config.CurrentVersion,
@@ -245,7 +265,7 @@ func validConfig() config.Config {
 				Instrument: "TEST",
 				Strategy: config.StrategyDefinition{
 					Type: "moving_average_cross",
-					Params: config.MovingAverageCrossParams{
+					Params: config.StrategyParams{
 						CandleInterval: "1m",
 						FastPeriod:     2,
 						SlowPeriod:     3,

@@ -43,7 +43,7 @@ func TestMultiStrategyRuntimeFailsClosedWhenMarketStreamBreaks(t *testing.T) {
 			t.Parallel()
 			store, workers, strategyIDs, subscriptions, _ := seedTwoPendingSignals(t)
 			adapter := &controlledMarketExchange{
-				Exchange: fake.New("fake", exchange.Capabilities{StreamingCandles: true, Sandbox: true}),
+				Exchange: fake.New("fake"),
 				events:   make(chan domain.MarketEvent), errors: make(chan error, 1),
 			}
 			ready := make(chan struct{}, 1)

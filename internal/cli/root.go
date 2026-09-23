@@ -21,7 +21,7 @@ func Execute() error {
 func newRootCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:           "lazytrade",
-		Short:         "Automated trading, market terminal, and strategy backtesting",
+		Short:         "Automated trading, market data, and strategy backtesting",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
@@ -29,12 +29,10 @@ func newRootCommand() *cobra.Command {
 	command.AddCommand(
 		newVersionCommand(),
 		newAgentCommand(),
-		newTerminalCommand(),
 		newBacktestCommand(),
 		newDataCommand(),
 		newAccountCommand(),
 		newConfigCommand(),
-		newDBCommand(),
 	)
 	return command
 }

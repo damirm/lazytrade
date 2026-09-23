@@ -44,8 +44,7 @@ func newSmokeStub(t *testing.T) *smokeStub {
 	}
 }
 
-func (s *smokeStub) Name() string                        { return "sandbox" }
-func (s *smokeStub) Capabilities() exchange.Capabilities { return exchange.Capabilities{Sandbox: true} }
+func (s *smokeStub) Name() string { return "sandbox" }
 func (s *smokeStub) Instruments(context.Context) ([]domain.Instrument, error) {
 	return []domain.Instrument{s.instrument}, nil
 }

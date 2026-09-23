@@ -14,8 +14,6 @@ import (
 	pb "opensource.tbank.ru/invest/invest-go/proto"
 )
 
-type CandleQuery = exchange.CandleQuery
-
 func candleInterval(d time.Duration) (pb.CandleInterval, error) {
 	switch d {
 	case time.Minute:
@@ -33,7 +31,7 @@ func candleInterval(d time.Duration) (pb.CandleInterval, error) {
 	}
 }
 
-func (a *Adapter) Candles(ctx context.Context, q CandleQuery) ([]domain.Candle, error) {
+func (a *Adapter) Candles(ctx context.Context, q exchange.CandleQuery) ([]domain.Candle, error) {
 	interval, err := candleInterval(q.Interval)
 	if err != nil {
 		return nil, err
