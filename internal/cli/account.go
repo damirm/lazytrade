@@ -7,7 +7,6 @@ import (
 
 	appconfig "github.com/damirm/lazytrade/internal/config"
 	"github.com/damirm/lazytrade/internal/domain"
-	"github.com/damirm/lazytrade/internal/exchange/tinvest"
 	"github.com/spf13/cobra"
 )
 
@@ -32,14 +31,7 @@ func newAccountListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := requiredEnvironment(exchangeConfig.TokenEnv)
-			if err != nil {
-				return err
-			}
-			adapter, err := tinvest.Open(command.Context(), tinvest.Config{
-				Name: exchangeID, Token: token,
-				CACertPath: resolveConfigPath(configPath, exchangeConfig.CACertPath),
-			})
+			adapter, err := openConfiguredSandboxTInvest(command.Context(), configPath, exchangeID, exchangeConfig, "")
 			if err != nil {
 				return err
 			}
@@ -74,7 +66,15 @@ func newAccountCreateCommand() *cobra.Command {
 		Short: "Create a T-Invest sandbox account",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			adapter, err := openSandboxAccountAdapter(command, configPath, exchangeID)
+			cfg, err := appconfig.LoadFile(configPath)
+			if err != nil {
+				return err
+			}
+			exchangeConfig, err := accountListExchange(cfg, exchangeID)
+			if err != nil {
+				return err
+			}
+			adapter, err := openConfiguredSandboxTInvest(command.Context(), configPath, exchangeID, exchangeConfig, "")
 			if err != nil {
 				return err
 			}
@@ -124,7 +124,7 @@ func newAccountPayInCommand() *cobra.Command {
 			if err != nil || !value.Amount.IsPositive() {
 				return errors.New("--amount must be a positive decimal RUB amount")
 			}
-			adapter, err := openConfiguredSandboxAdapter(command, configPath, exchangeID, exchangeConfig)
+			adapter, err := openConfiguredSandboxTInvest(command.Context(), configPath, exchangeID, exchangeConfig, "")
 			if err != nil {
 				return err
 			}
@@ -146,33 +146,6 @@ func newAccountPayInCommand() *cobra.Command {
 	_ = command.MarkFlagRequired("exchange")
 	_ = command.MarkFlagRequired("amount")
 	return command
-}
-
-func openSandboxAccountAdapter(command *cobra.Command, configPath, exchangeID string) (*tinvest.Adapter, error) {
-	cfg, err := appconfig.LoadFile(configPath)
-	if err != nil {
-		return nil, err
-	}
-	exchangeConfig, err := accountListExchange(cfg, exchangeID)
-	if err != nil {
-		return nil, err
-	}
-	return openConfiguredSandboxAdapter(command, configPath, exchangeID, exchangeConfig)
-}
-
-func openConfiguredSandboxAdapter(
-	command *cobra.Command,
-	configPath, exchangeID string,
-	exchangeConfig appconfig.ExchangeConfig,
-) (*tinvest.Adapter, error) {
-	token, err := requiredEnvironment(exchangeConfig.TokenEnv)
-	if err != nil {
-		return nil, err
-	}
-	return tinvest.Open(command.Context(), tinvest.Config{
-		Name: exchangeID, Token: token,
-		CACertPath: resolveConfigPath(configPath, exchangeConfig.CACertPath),
-	})
 }
 
 func accountListExchange(cfg appconfig.Config, exchangeID string) (appconfig.ExchangeConfig, error) {

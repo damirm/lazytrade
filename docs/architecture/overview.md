@@ -8,13 +8,16 @@ SQL или конкретный storage driver.
 
 ```text
 cmd/lazytrade
-  -> internal/cli             composition и команды
+  -> internal/cli             команды и live composition
      -> internal/agent        live orchestration/recovery
      -> internal/app          backtest и data workflows
-        -> internal/strategy  чистая логика стратегий и Worker
-        -> internal/risk      per-strategy risk gates
-        -> internal/exchange  нормализованный exchange port
-        -> internal/storage   repository contracts
+  internal/cli, internal/app
+     -> internal/composition общий strategy-risk config
+  internal/agent, internal/app
+     -> internal/strategy    чистая логика стратегий и Worker
+     -> internal/risk        per-strategy risk gates
+     -> internal/exchange    нормализованный exchange port
+     -> internal/storage     repository contracts
 
 infrastructure adapters:
   internal/exchange/tinvest
@@ -67,6 +70,11 @@ infrastructure adapters:
 - Signal ID детерминирован из strategy ID, event cursor, ordinal и payload.
 - Live и backtest строят built-in стратегии через общий
   `internal/strategy/builtin` composition point.
+- Live и backtest строят `risk.Config` через `internal/composition.BuildStrategyRisk`:
+  одна trading-day policy и единое отображение денежных лимитов/P&L mode.
+  CLI отдельно отклоняет неподдерживаемое live action; backtest отдельно
+  нормализует asset initial cash и создаёт evaluator. Live execution-day key
+  берётся из той же policy, что передана persistent risk gate.
 - Live runtime создаётся через `agent.NewRuntime(RuntimeConfig)`. Каждая
   стратегия задаётся одним `StrategyBinding`, который связывает strategy ID,
   instrument, worker, risk gate, subscription и trading-day policy. Отдельных

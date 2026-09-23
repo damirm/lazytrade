@@ -9,7 +9,6 @@ import (
 	appconfig "github.com/damirm/lazytrade/internal/config"
 	"github.com/damirm/lazytrade/internal/domain"
 	"github.com/damirm/lazytrade/internal/exchange"
-	"github.com/damirm/lazytrade/internal/exchange/tinvest"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/spf13/cobra"
@@ -65,14 +64,7 @@ func newAccountSmokeTestCommand() *cobra.Command {
 			if err != nil || !orderQuantity.Value.IsPositive() {
 				return errors.New("--quantity must be a positive decimal")
 			}
-			token, err := requiredEnvironment(exchangeConfig.TokenEnv)
-			if err != nil {
-				return err
-			}
-			adapter, err := tinvest.Open(command.Context(), tinvest.Config{
-				Name: exchangeID, Token: token, AccountID: accountID,
-				CACertPath: resolveConfigPath(configPath, exchangeConfig.CACertPath),
-			})
+			adapter, err := openConfiguredSandboxTInvest(command.Context(), configPath, exchangeID, exchangeConfig, accountID)
 			if err != nil {
 				return err
 			}

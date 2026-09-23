@@ -10,7 +10,6 @@ import (
 	appconfig "github.com/damirm/lazytrade/internal/config"
 	"github.com/damirm/lazytrade/internal/domain"
 	"github.com/damirm/lazytrade/internal/exchange"
-	"github.com/damirm/lazytrade/internal/exchange/tinvest"
 	"github.com/spf13/cobra"
 )
 
@@ -130,18 +129,14 @@ func runConfiguredHistoryProbe(
 	if !exchangeConfig.Sandbox || exchangeConfig.AllowLiveTrading {
 		return historyProbeReport{}, errors.New("history probe supports T-Invest sandbox mode only")
 	}
-	token, err := requiredEnvironment(exchangeConfig.TokenEnv)
-	if err != nil {
+	if _, err := requiredEnvironment(exchangeConfig.TokenEnv); err != nil {
 		return historyProbeReport{}, err
 	}
 	accountID, err := requiredEnvironment(exchangeConfig.AccountIDEnv)
 	if err != nil {
 		return historyProbeReport{}, err
 	}
-	adapter, err := tinvest.Open(ctx, tinvest.Config{
-		Name: strategyConfig.Exchange, Token: token, AccountID: accountID,
-		CACertPath: resolveConfigPath(configPath, exchangeConfig.CACertPath),
-	})
+	adapter, err := openConfiguredSandboxTInvest(ctx, configPath, strategyConfig.Exchange, exchangeConfig, accountID)
 	if err != nil {
 		return historyProbeReport{}, fmt.Errorf("history probe connect: %w", err)
 	}

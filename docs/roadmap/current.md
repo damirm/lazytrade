@@ -100,9 +100,11 @@ PostgreSQL, [multi-exchange](multi-exchange.md) и каталог дополни
 контура; он не вводит новый продуктовый milestone.
 
 R9 разделил приватные фазы startup/recovery и market loop и сгруппировал
-runtime helpers по ответственности без изменения торгового поведения. Реальный
-sandbox buy/sell round trip остаётся неподтверждённым; следующий фиксированный
-пункт поддерживающего плана — R10 (устранение дублирования composition-кода).
+runtime helpers по ответственности без изменения торгового поведения. R10
+объединил открытие sandbox T-Invest в CLI и построение risk/trading-day config
+для live/backtest. Реальный sandbox buy/sell round trip остаётся
+неподтверждённым; следующий фиксированный пункт поддерживающего плана — R11
+(единая подготовка backtest dataset).
 Открытые safety-находки R9 перечислены в
 [trading-runtime.md](../architecture/trading-runtime.md#startup-sequence) и
 не меняют основной порядок работ выше.

@@ -319,7 +319,7 @@ execution_ingress.go
 предшествовавшие R9 safety-находки описаны в
 [`trading-runtime.md`](../architecture/trading-runtime.md#startup-sequence); они
 не закрыты механическим разделением. Следующий фиксированный пункт
-поддерживающего плана — R10, без изменения основного sandbox milestone.
+поддерживающего плана — R11, без изменения основного sandbox milestone.
 
 Пройдены полный `go test -count=1 -timeout 60s ./...`, релевантный race
 detector, `go vet ./...` и `go build ./...`; реальный sandbox API не вызывался.
@@ -327,6 +327,13 @@ detector, `go vet ./...` и `go build ./...`; реальный sandbox API не 
 новых критичных, обязательных или факультативных замечаний.
 
 ### R10. Устранение дублирования composition-кода
+
+Статус: реализовано 22 сентября 2026 года. Общий sandbox-only opener
+используется командами CLI; `internal/composition.BuildStrategyRisk` строит
+одну policy и risk limits для live/backtest. Live-only action validation и
+backtest initial-cash normalization остались в своих вызывающих слоях.
+Parity/error tests покрывают общий контракт. Реальный sandbox round trip этим
+рефакторингом не подтверждён.
 
 Работы:
 

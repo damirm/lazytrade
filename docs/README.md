@@ -27,6 +27,8 @@
 [multi-exchange runtime](roadmap/multi-exchange.md) и текущий
 [план рефакторинга](roadmap/refactoring.md). Детальные шаги R9 находятся в
 [плане разделения runtime](superpowers/plans/2026-09-22-r9-runtime-split.md).
+[План R10 composition consolidation](superpowers/plans/2026-09-22-r10-composition-consolidation.md)
+фиксирует границы общего sandbox-opener и strategy-risk composition.
 Принятые архитектурные
 решения хранятся как ADR в [`architecture/adr/`](architecture/adr/README.md),
 а целевые требования — в [`specs/`](specs/README.md).

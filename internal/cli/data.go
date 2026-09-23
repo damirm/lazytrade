@@ -12,7 +12,6 @@ import (
 	"github.com/damirm/lazytrade/internal/backtest"
 	appconfig "github.com/damirm/lazytrade/internal/config"
 	"github.com/damirm/lazytrade/internal/domain"
-	"github.com/damirm/lazytrade/internal/exchange/tinvest"
 	"github.com/spf13/cobra"
 )
 
@@ -89,10 +88,7 @@ func newDataDownloadCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("parse --to: %w", err)
 			}
-			caPath := resolveConfigPath(configPath, exchangeConfig.CACertPath)
-			adapter, err := tinvest.Open(command.Context(), tinvest.Config{
-				Name: exchangeID, Token: token, CACertPath: caPath,
-			})
+			adapter, err := openConfiguredSandboxTInvest(command.Context(), configPath, exchangeID, exchangeConfig, "")
 			if err != nil {
 				return err
 			}

@@ -118,18 +118,14 @@ func runAgentPreflight(ctx context.Context, configPath string, cfg appconfig.Con
 		return report, fmt.Errorf("preflight SQLite lock: %w", err)
 	}
 
-	token, err := requiredEnvironment(exchangeConfig.TokenEnv)
-	if err != nil {
+	if _, err := requiredEnvironment(exchangeConfig.TokenEnv); err != nil {
 		return report, err
 	}
 	accountID, err := requiredEnvironment(exchangeConfig.AccountIDEnv)
 	if err != nil {
 		return report, err
 	}
-	adapter, err := tinvest.Open(ctx, tinvest.Config{
-		Name: strategyConfig.Exchange, Token: token, AccountID: accountID,
-		CACertPath: resolveConfigPath(configPath, exchangeConfig.CACertPath),
-	})
+	adapter, err := openConfiguredSandboxTInvest(ctx, configPath, strategyConfig.Exchange, exchangeConfig, accountID)
 	if err != nil {
 		return report, fmt.Errorf("preflight connect: %w", err)
 	}

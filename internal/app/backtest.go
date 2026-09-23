@@ -17,9 +17,9 @@ import (
 
 	"github.com/damirm/lazytrade/internal/backtest"
 	"github.com/damirm/lazytrade/internal/clock"
+	"github.com/damirm/lazytrade/internal/composition"
 	"github.com/damirm/lazytrade/internal/config"
 	"github.com/damirm/lazytrade/internal/domain"
-	"github.com/damirm/lazytrade/internal/risk"
 	"github.com/damirm/lazytrade/internal/storage"
 	"github.com/damirm/lazytrade/internal/strategy"
 	"github.com/damirm/lazytrade/internal/strategy/builtin"
@@ -343,33 +343,13 @@ func artifactManifests(result BacktestResult, createdAt time.Time) ([]storage.Ba
 }
 
 func buildManagedRisk(strategyConfig config.StrategyConfig, run config.BacktestRun, runtimeClock clock.Clock) (backtest.RiskEvaluator, error) {
-	policy, err := risk.NewTradingDayPolicy(strategyConfig.TradingDay.Timezone, strategyConfig.TradingDay.ResetAt)
-	if err != nil {
-		return nil, err
-	}
 	asset, err := domain.NormalizeAsset(run.Execution.InitialCash.Asset)
 	if err != nil {
 		return nil, err
 	}
-	riskConfig := risk.Config{
-		StrategyID: domain.StrategyID(strategyConfig.ID), SettlementAsset: asset,
-		TradingDay: policy,
-	}
-	if configured := strategyConfig.Risk.MaxPositionValue; configured != nil {
-		value, err := domain.NewMoney(configured.Amount, configured.Asset)
-		if err != nil {
-			return nil, err
-		}
-		riskConfig.MaxPositionValue = &value
-	}
-	if configured := strategyConfig.Risk.MaxDailyLoss; configured != nil {
-		value, err := domain.NewMoney(configured.Amount, configured.Asset)
-		if err != nil {
-			return nil, err
-		}
-		riskConfig.MaxDailyLoss = &risk.DailyLossLimit{
-			Limit: value, Mode: risk.PnLMode(configured.PnL),
-		}
+	riskConfig, err := composition.BuildStrategyRisk(strategyConfig, asset)
+	if err != nil {
+		return nil, err
 	}
 	return backtest.NewManagedRiskEvaluator(riskConfig, runtimeClock)
 }

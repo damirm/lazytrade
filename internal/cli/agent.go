@@ -16,12 +16,12 @@ import (
 
 	"github.com/damirm/lazytrade/internal/agent"
 	appclock "github.com/damirm/lazytrade/internal/clock"
+	"github.com/damirm/lazytrade/internal/composition"
 	appconfig "github.com/damirm/lazytrade/internal/config"
 	"github.com/damirm/lazytrade/internal/domain"
 	"github.com/damirm/lazytrade/internal/exchange"
 	"github.com/damirm/lazytrade/internal/exchange/tinvest"
 	"github.com/damirm/lazytrade/internal/logging"
-	"github.com/damirm/lazytrade/internal/risk"
 	"github.com/damirm/lazytrade/internal/storage"
 	"github.com/damirm/lazytrade/internal/storage/sqlite"
 	"github.com/damirm/lazytrade/internal/strategy"
@@ -105,20 +105,14 @@ func runAgent(ctx context.Context, configPath string, cfg appconfig.Config) erro
 		return fmt.Errorf("acquire agent storage lock: %w", err)
 	}
 
-	token, err := requiredEnvironment(exchangeConfig.TokenEnv)
-	if err != nil {
+	if _, err := requiredEnvironment(exchangeConfig.TokenEnv); err != nil {
 		return err
 	}
 	accountID, err := requiredEnvironment(exchangeConfig.AccountIDEnv)
 	if err != nil {
 		return err
 	}
-	adapter, err := tinvest.Open(ctx, tinvest.Config{
-		Name:       strategyConfig.Exchange,
-		Token:      token,
-		AccountID:  accountID,
-		CACertPath: resolveConfigPath(configPath, exchangeConfig.CACertPath),
-	})
+	adapter, err := openConfiguredSandboxTInvest(ctx, configPath, strategyConfig.Exchange, exchangeConfig, accountID)
 	if err != nil {
 		return fmt.Errorf("open T-Invest: %w", err)
 	}
@@ -169,12 +163,12 @@ func runAgent(ctx context.Context, configPath string, cfg appconfig.Config) erro
 		if workerErr != nil {
 			return fmt.Errorf("build strategy worker %q: %w", configured.ID, workerErr)
 		}
-		policy, policyErr := risk.NewTradingDayPolicy(configured.TradingDay.Timezone, configured.TradingDay.ResetAt)
-		if policyErr != nil {
-			return fmt.Errorf("strategy %q trading day: %w", configured.ID, policyErr)
-		}
-		riskConfig, configErr := buildLiveRiskConfig(configured, instrument.SettlementAsset, policy)
+		riskConfig, configErr := composition.BuildStrategyRisk(configured, instrument.SettlementAsset)
 		if configErr != nil {
+			var policyErr *composition.TradingDayPolicyError
+			if errors.As(configErr, &policyErr) {
+				return fmt.Errorf("strategy %q trading day: %w", configured.ID, configErr)
+			}
 			return fmt.Errorf("strategy %q risk: %w", configured.ID, configErr)
 		}
 		riskGate, gateErr := agent.NewPersistentRiskGate(
@@ -189,7 +183,7 @@ func runAgent(ctx context.Context, configPath string, cfg appconfig.Config) erro
 			Subscription: exchange.Subscription{
 				InstrumentID: instrumentID, Kind: exchange.SubscriptionCandles, Interval: interval,
 			},
-			TradingDayKey: func(at time.Time) string { return policy.At(at).Key },
+			TradingDayKey: func(at time.Time) string { return riskConfig.TradingDay.At(at).Key },
 		})
 	}
 	runtime, err := agent.NewRuntime(agent.RuntimeConfig{
@@ -213,34 +207,6 @@ func runAgent(ctx context.Context, configPath string, cfg appconfig.Config) erro
 		return err
 	}
 	return nil
-}
-
-func buildLiveRiskConfig(
-	strategyConfig appconfig.StrategyConfig,
-	settlementAsset string,
-	policy risk.TradingDayPolicy,
-) (risk.Config, error) {
-	result := risk.Config{
-		StrategyID:      domain.StrategyID(strategyConfig.ID),
-		SettlementAsset: settlementAsset, TradingDay: policy,
-	}
-	if configured := strategyConfig.Risk.MaxPositionValue; configured != nil {
-		value, err := domain.NewMoney(configured.Amount, configured.Asset)
-		if err != nil {
-			return result, err
-		}
-		result.MaxPositionValue = &value
-	}
-	if configured := strategyConfig.Risk.MaxDailyLoss; configured != nil {
-		value, err := domain.NewMoney(configured.Amount, configured.Asset)
-		if err != nil {
-			return result, err
-		}
-		result.MaxDailyLoss = &risk.DailyLossLimit{
-			Limit: value, Mode: risk.PnLMode(configured.PnL),
-		}
-	}
-	return result, nil
 }
 
 func configuredValue(literal, environment, label string) (string, error) {
